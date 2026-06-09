@@ -34,14 +34,28 @@ columns, factor scoring, in-result statistics, multi-key sort, client-side analy
 
 *Computed `dollar_vol`, a `zscore(change)` stat column, and a `factor_score` ranking, all live.*
 
+## Signals, timeframes, drag-and-drop
+
+![Signals and timeframes](docs/signals.png)
+
+- **Signal presets.** A SIGNALS group of one-click technical scans: Golden Cross and Death Cross
+  (`SMA50` crossing `SMA200`), Above / Below All MAs, Gap and Go, Volume Breakout, and the
+  **Stacked EMA Ribbon** on the real Fibonacci periods `close > EMA8 > EMA21 > EMA34 > EMA55 > EMA89`
+  (1,941 names live, no faked periods, every EMA is an actual scanner field).
+- **Multi-timeframe columns.** Toggle 1D / 1W / 1M / 1H / 4H and any technical column gets its
+  suffixed siblings added alongside, so you can read `RSI`, `RSI|1W`, and `RSI|1M` side by side.
+  Fundamentals are never suffixed.
+- **Drag-and-drop columns.** Reorder by dragging table headers or column-picker chips. A plain
+  header click still sorts.
+
 ## The rest of the surface
 
 - Visual filter builder with the full operator set: comparisons, `between`, `isin`, `crosses`,
   `above_pct`, `like`, and more, with AND / OR grouping.
 - Multi-market switcher: US stocks, crypto, forex, futures, bonds, CFDs. A market switch is a fresh
   canvas.
-- 22 one-click preset scans (top gainers, unusual volume, RSI extremes, 52-week highs, golden
-  cross, dividend aristocrats, breakouts, crypto movers, and more).
+- 30 one-click preset scans (top gainers, unusual volume, RSI extremes, 52-week highs, the signal
+  pack above, dividend aristocrats, crypto movers, and more).
 - Column picker over a 172-field catalog, grouped and searchable.
 - Row detail drawer with a performance sparkline. Saved screens and a watchlist (localStorage).
   CSV export. Auto-refresh. Command palette (Ctrl-K) and full keyboard navigation.

@@ -48,6 +48,34 @@ def main() -> int:
         page.screenshot(path=str(OUT / "analytics.png"))
         print("wrote analytics.png")
 
+        # Signals view: the Stacked EMA Fibonacci ribbon with a heatmap on change.
+        page.evaluate(
+            """async () => {
+              const s = window.Screener.store;
+              s.set({
+                columns: ['name','close','change','EMA8','EMA21','EMA34','EMA55','EMA89'],
+                computed: [], stats: [], factor: null,
+                filters: [
+                  {field:'close', op:'>', value:'EMA8'},
+                  {field:'EMA8', op:'>', value:'EMA21'},
+                  {field:'EMA21', op:'>', value:'EMA34'},
+                  {field:'EMA34', op:'>', value:'EMA55'},
+                  {field:'EMA55', op:'>', value:'EMA89'}
+                ],
+                match: 'all',
+                sort: [{field:'change', dir:'desc'}]
+              });
+              await s.runScreen();
+              if (window.Screener.table && window.Screener.table.heatmapCols) {
+                window.Screener.table.heatmapCols.add('change');
+                window.Screener.table._rerender && window.Screener.table._rerender();
+              }
+            }"""
+        )
+        time.sleep(1.5)
+        page.screenshot(path=str(OUT / "signals.png"))
+        print("wrote signals.png")
+
         browser.close()
     return 0
 

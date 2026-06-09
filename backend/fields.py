@@ -183,12 +183,32 @@ _TECHNICALS = [
 ]
 
 _MOVINGAVG = [
+    # Full standard + Fibonacci period set. All probed live and confirmed to
+    # return data, so the EMA ribbon signals (8/21/34/55/89) display correctly.
+    _f("SMA5", "SMA 5", "MovingAverages", "price", "$"),
+    _f("SMA8", "SMA 8", "MovingAverages", "price", "$"),
+    _f("SMA10", "SMA 10", "MovingAverages", "price", "$"),
+    _f("SMA13", "SMA 13", "MovingAverages", "price", "$"),
     _f("SMA20", "SMA 20", "MovingAverages", "price", "$"),
+    _f("SMA21", "SMA 21", "MovingAverages", "price", "$"),
+    _f("SMA30", "SMA 30", "MovingAverages", "price", "$"),
+    _f("SMA34", "SMA 34", "MovingAverages", "price", "$"),
     _f("SMA50", "SMA 50", "MovingAverages", "price", "$"),
+    _f("SMA55", "SMA 55", "MovingAverages", "price", "$"),
+    _f("SMA89", "SMA 89", "MovingAverages", "price", "$"),
     _f("SMA100", "SMA 100", "MovingAverages", "price", "$"),
     _f("SMA200", "SMA 200", "MovingAverages", "price", "$"),
+    _f("EMA5", "EMA 5", "MovingAverages", "price", "$"),
+    _f("EMA8", "EMA 8", "MovingAverages", "price", "$"),
+    _f("EMA10", "EMA 10", "MovingAverages", "price", "$"),
+    _f("EMA13", "EMA 13", "MovingAverages", "price", "$"),
     _f("EMA20", "EMA 20", "MovingAverages", "price", "$"),
+    _f("EMA21", "EMA 21", "MovingAverages", "price", "$"),
+    _f("EMA30", "EMA 30", "MovingAverages", "price", "$"),
+    _f("EMA34", "EMA 34", "MovingAverages", "price", "$"),
     _f("EMA50", "EMA 50", "MovingAverages", "price", "$"),
+    _f("EMA55", "EMA 55", "MovingAverages", "price", "$"),
+    _f("EMA89", "EMA 89", "MovingAverages", "price", "$"),
     _f("EMA100", "EMA 100", "MovingAverages", "price", "$"),
     _f("EMA200", "EMA 200", "MovingAverages", "price", "$"),
     _f("BB.upper", "Bollinger Upper", "MovingAverages", "price", "$"),

@@ -477,5 +477,72 @@
       "assert screenshot embedded"
     ],
     "passes": true
+  },
+  {
+    "id": 47,
+    "category": "functional",
+    "description": "SIGNALS preset group renders as its own section (golden cross, EMA ribbon, etc)",
+    "steps": [
+      "open preset panel",
+      "assert SIGNALS header",
+      "assert >=8 signal presets"
+    ],
+    "passes": true
+  },
+  {
+    "id": 48,
+    "category": "analytics",
+    "description": "Stacked EMA Fibonacci ribbon preset (close>EMA8>EMA21>EMA34>EMA55>EMA89) returns real rows",
+    "steps": [
+      "click Stacked EMA Ribbon",
+      "assert count>0",
+      "assert EMA8 column present"
+    ],
+    "passes": true
+  },
+  {
+    "id": 49,
+    "category": "analytics",
+    "description": "Timeframe toggles add suffixed technical columns side-by-side (RSI, RSI|1W, RSI|1M)",
+    "steps": [
+      "add RSI col",
+      "enable 1W and 1M",
+      "assert RSI|1W and RSI|1M columns with real values"
+    ],
+    "passes": true
+  },
+  {
+    "id": 50,
+    "category": "functional",
+    "description": "Timeframe gate excludes fundamentals and toggling off removes only that variant",
+    "steps": [
+      "enable 1W",
+      "assert market_cap_basic not suffixed",
+      "disable 1W",
+      "assert |1W removed |1M kept"
+    ],
+    "passes": true
+  },
+  {
+    "id": 51,
+    "category": "frontend",
+    "description": "Drag-and-drop column reorder on headers and column-picker chips, click still sorts",
+    "steps": [
+      "assert th draggable",
+      "reorder writes store.columns",
+      "assert plain header click still sorts"
+    ],
+    "passes": true
+  },
+  {
+    "id": 52,
+    "category": "frontend",
+    "description": "Heatmap gradient visibly tints every cell across the range (mid-range alpha fix)",
+    "steps": [
+      "enable heatmap on a column",
+      "assert all cells alpha>=0.15",
+      "assert pink-to-green ramp"
+    ],
+    "passes": true
   }
 ]
