@@ -165,7 +165,7 @@
       "load in browser",
       "assert no console errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 17,
@@ -175,7 +175,7 @@
       "screenshot",
       "assert computed styles match palette"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 18,
@@ -185,7 +185,7 @@
       "run default screen",
       "assert tbody rows>0"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": 19,
