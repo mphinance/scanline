@@ -11,6 +11,10 @@ columns, factor scoring, in-result statistics, multi-key sort, client-side analy
 
 ![Neon Screener](docs/hero.png)
 
+Hit `\` for full-table mode: the rail folds away and the factor-ranked table takes the whole screen.
+
+![Full-table mode](docs/fulltable.png)
+
 ## What makes it more than a clone
 
 - **Computed columns.** Define your own derived fields with a safe expression engine, e.g.
