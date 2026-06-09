@@ -61,7 +61,9 @@ columns, factor scoring, in-result statistics, multi-key sort, client-side analy
   canvas.
 - 47 one-click preset scans (top gainers, unusual volume, RSI extremes, 52-week highs, the signal
   pack above, dividend aristocrats, crypto movers, and more).
-- Column picker over a 172-field catalog, grouped and searchable.
+- Column picker over the full TradingView field universe: ~190 curated, friendly-labelled
+  fields lead, and every other queryable field (1000+ in total, probed live so none of them
+  error) is reachable by search. A Columns button by the table opens it.
 - Row detail drawer with a performance sparkline. Saved screens and a watchlist (localStorage).
   CSV export. Auto-refresh. Command palette (Ctrl-K) and full keyboard navigation.
 

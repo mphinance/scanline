@@ -100,6 +100,17 @@ const STYLE = `
 
 .col-apply { width: 100%; justify-content: center; margin-top: var(--sp-1); }
 .col-empty { font-size: 10.5px; color: var(--muted); font-style: italic; }
+.col-more { font-size: 10px; color: var(--muted); padding: 6px 4px 2px; border-top: 1px dashed var(--line); margin-top: 4px; }
+.tbl-cols-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 5px 10px; cursor: pointer;
+  color: var(--cyan); background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.4); border-radius: var(--radius-sm);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.tbl-cols-btn:hover { background: rgba(0, 240, 255, 0.16); box-shadow: var(--glow-cyan); }
 `;
 
 function injectStyles() {
@@ -417,28 +428,41 @@ window.Screener.registerModule('columns', (ctx) => {
     });
   }
 
+  // The catalog can hold over a thousand fields, so cap how many render at once
+  // and lean on search. Matches lead with the curated, friendly fields.
+  const CATALOG_RENDER_CAP = 200;
+
   function renderCatalog() {
     const q = (els.search.value || '').trim().toLowerCase();
     const selected = new Set(store.state.columns);
     els.catalog.textContent = '';
 
-    // Preserve catalog group order from fields.js by walking state.fields.
-    const groups = new Map();
+    // Collect matches first so we can cap and report how many were hidden.
+    const matches = [];
     for (const f of store.state.fields) {
       if (q) {
         const hay = (f.id + ' ' + f.label + ' ' + f.group).toLowerCase();
         if (!hay.includes(q)) continue;
       }
-      if (!groups.has(f.group)) groups.set(f.group, []);
-      groups.get(f.group).push(f);
+      matches.push(f);
     }
 
-    if (groups.size === 0) {
+    if (matches.length === 0) {
       const none = document.createElement('div');
       none.className = 'col-empty';
       none.textContent = 'No fields match.';
       els.catalog.appendChild(none);
       return;
+    }
+
+    const shown = matches.slice(0, CATALOG_RENDER_CAP);
+    const hidden = matches.length - shown.length;
+
+    // Preserve catalog group order by walking the (already ordered) matches.
+    const groups = new Map();
+    for (const f of shown) {
+      if (!groups.has(f.group)) groups.set(f.group, []);
+      groups.get(f.group).push(f);
     }
 
     for (const [group, fields] of groups) {
@@ -473,6 +497,15 @@ window.Screener.registerModule('columns', (ctx) => {
         });
         els.catalog.appendChild(opt);
       }
+    }
+
+    if (hidden > 0) {
+      const more = document.createElement('div');
+      more.className = 'col-more';
+      more.textContent = q
+        ? `${hidden} more match. Refine the search to narrow it down.`
+        : `${hidden} more fields. Type to search all ${matches.length}.`;
+      els.catalog.appendChild(more);
     }
   }
 
@@ -573,6 +606,22 @@ window.Screener.registerModule('columns', (ctx) => {
     renderStatFieldOptions();
     renderAll();
   });
+
+  // ---- Discoverable launcher in the table toolbar. Jumps the rail to the
+  // Columns tab (and reveals the rail if hidden) so the picker is easy to find.
+  const toolbar = ctx.el('table-toolbar');
+  if (toolbar && !toolbar.querySelector('.tbl-cols-btn')) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tbl-cols-btn';
+    btn.innerHTML = '<span>columns</span>';
+    btn.title = 'Choose columns. Add any of 1000+ fields, computed, or stat columns.';
+    btn.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('neon:rail-show', { detail: { tab: 'Columns' } }));
+      els.search.focus();
+    });
+    toolbar.appendChild(btn);
+  }
 
   // Initial paint (catalog is already loaded by the time modules run).
   renderStatFieldOptions();

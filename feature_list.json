@@ -610,5 +610,37 @@
       "assert persisted"
     ],
     "passes": true
+  },
+  {
+    "id": 59,
+    "category": "functional",
+    "description": "Column picker exposes the full queryable TradingView field universe (1000+ fields, probed live), searchable; obscure fields return real data",
+    "steps": [
+      "search obscure field",
+      "add it",
+      "assert real value in table"
+    ],
+    "passes": true
+  },
+  {
+    "id": 60,
+    "category": "frontend",
+    "description": "Discoverable Columns button in the table toolbar jumps the rail to the Columns tab and focuses search",
+    "steps": [
+      "click Columns button",
+      "assert Columns tab active"
+    ],
+    "passes": true
+  },
+  {
+    "id": 61,
+    "category": "frontend",
+    "description": "Column catalog caps render at 200 with a count note so 1000+ fields stay snappy",
+    "steps": [
+      "broad search",
+      "assert <=200 rendered",
+      "assert more note"
+    ],
+    "passes": true
   }
 ]

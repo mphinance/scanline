@@ -270,7 +270,8 @@ _OTHER = [
     _f("active_symbol", "Active", "Other", "str"),
 ]
 
-FIELDS: list[dict] = (
+# The hand curated, nicely labelled and grouped fields. These lead the catalog.
+_CURATED: list[dict] = (
     _IDENTITY
     + _PRICE
     + _PERFORMANCE
@@ -287,8 +288,37 @@ FIELDS: list[dict] = (
     + _OTHER
 )
 
-# Fast lookup id -> meta.
+# The complete field universe, generated from TradingView's live metainfo by
+# backend/gen_fields.py (committed as fields_all.json, no runtime network call).
+# Curated entries win on id, so common fields keep their friendly labels and the
+# remaining ~850 base fields are still searchable in the column picker.
+import json as _json
+from pathlib import Path as _Path
+
+_curated_ids = {f["id"] for f in _CURATED}
+_curated_groups = {f["group"] for f in _CURATED}
+try:
+    _all = _json.loads((_Path(__file__).parent / "fields_all.json").read_text(encoding="utf-8"))
+except Exception:  # noqa: BLE001
+    _all = []
+# Bucket non curated fields the catalog already names under a "More: <group>"
+# label so they do not crowd the curated groups but stay grouped and findable.
+_extra: list[dict] = []
+for _f in _all:
+    if _f["id"] in _curated_ids:
+        continue
+    g = _f["group"]
+    _f = dict(_f)
+    _f["group"] = g if g not in _curated_groups else f"More {g}"
+    _extra.append(_f)
+
+FIELDS: list[dict] = _CURATED + _extra
+
+# Fast lookup id -> meta. Covers the full universe, so any real field validates.
 field_index: dict[str, dict] = {f["id"]: f for f in FIELDS}
+
+# Curated subset (ids) for callers that want only the friendly set.
+CURATED_IDS: set[str] = _curated_ids
 
 
 # Timeframe suffixes the upstream scanner accepts on price and technical fields,
