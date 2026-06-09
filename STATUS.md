@@ -1,7 +1,7 @@
 # STATUS — NEON SCREENER
 
-**Build complete. 46 / 46 features passing.** A real, live market screener with a quant analytics
-layer, in the synthwave aesthetic. Built with the orchestrator pattern: 6 waves, 8 parallel
+**Build complete. 52 / 52 features passing.** A real, live market screener with a quant analytics
+layer, in the synthwave aesthetic. Built with the orchestrator pattern: 7 waves, 11 parallel
 subagents, verified live in-browser between every wave.
 
 ## What shipped
@@ -43,6 +43,12 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 - **Wave 5** Polish: removed every em dash from source, reduced backdrop-blur radii for snappier
   paint, verified loading/empty/error states.
 - **Wave 6** Final verify, README with fresh screenshots, this status doc.
+- **Wave 7** Signals pack (parallel x3, probe-gated): SIGNALS preset group (golden/death cross,
+  Stacked EMA Fibonacci ribbon on real 8/21/34/55/89, gap and go, breakouts, above/below all MAs),
+  multi-timeframe columns (1D/1W/1M/1H/4H side by side), drag-and-drop column reorder. Fixed the
+  heatmap color ramp (was near-invisible mid-range, now a visible pink-to-green gradient on every
+  cell). Probed every MA period and timeframe suffix against live data first, then added the full
+  EMA/SMA period set to the catalog (190 fields) so ribbon columns display, not just filter.
 
 ## Verified live (in-browser, real data)
 - Default scan: 7,842 US stocks, NVDA first, sub-3s.
