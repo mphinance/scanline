@@ -417,6 +417,7 @@ window.Screener.registerModule('command-palette', (ctx) => {
     input.value = '';
     applyQuery();
     backdrop.hidden = false;
+    host.classList.add('open'); // layout.css gates host visibility on .open
     isOpen = true;
     // Focus after the element is visible so the cursor lands in the field.
     requestAnimationFrame(() => input.focus());
@@ -425,6 +426,7 @@ window.Screener.registerModule('command-palette', (ctx) => {
   function closePalette() {
     if (!isOpen) return;
     backdrop.hidden = true;
+    host.classList.remove('open');
     isOpen = false;
   }
 
