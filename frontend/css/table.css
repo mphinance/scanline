@@ -1,0 +1,105 @@
+/* table.css — the dense neon data table.
+ * Sticky header, zebra rows, hover glow, numeric right-align in mono,
+ * sign-colored change cells. No em dashes. */
+
+.screener-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  font-size: 12px;
+}
+
+/* ---- Header ---- */
+.screener-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(14, 14, 18, 0.96);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(0, 240, 255, 0.35);
+  border-right: 1px solid var(--line-soft);
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: left;
+  user-select: none;
+}
+.screener-table thead th.num { text-align: right; }
+.screener-table thead th:hover { color: var(--cyan); }
+
+/* Sort affordance hook (later sort module can toggle .sort-asc/.sort-desc). */
+.screener-table thead th .sort-ind {
+  margin-left: 6px;
+  color: var(--cyan);
+  font-size: 9px;
+  opacity: 0.85;
+}
+
+/* ---- Body cells ---- */
+.screener-table tbody td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  border-right: 1px solid var(--line-soft);
+  white-space: nowrap;
+  color: var(--text);
+}
+.screener-table tbody td.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.screener-table tbody td.str { color: var(--muted); }
+
+/* Ticker column gets accent + mono, sticky to the left edge. */
+.screener-table td.col-ticker,
+.screener-table th.col-ticker,
+.screener-table td.col-name,
+.screener-table th.col-name {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: rgba(14, 14, 18, 0.96);
+}
+.screener-table th.col-name { z-index: 6; }
+.screener-table td.col-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--cyan);
+}
+
+/* ---- Zebra + hover glow ---- */
+.screener-table tbody tr:nth-child(even) td { background-color: rgba(255, 255, 255, 0.015); }
+.screener-table tbody tr:nth-child(even) td.col-name { background: rgba(16, 16, 20, 0.97); }
+
+.screener-table tbody tr {
+  cursor: pointer;
+  transition: box-shadow 0.1s ease;
+}
+.screener-table tbody tr:hover td {
+  background-color: rgba(0, 240, 255, 0.07);
+}
+.screener-table tbody tr:hover td.col-name {
+  background: rgba(0, 240, 255, 0.12);
+  box-shadow: inset 2px 0 0 var(--cyan);
+}
+
+/* ---- Sign coloring for change-like numeric cells ---- */
+.screener-table tbody td.sign-pos { color: var(--pos); }
+.screener-table tbody td.sign-neg { color: var(--neg); }
+
+/* Null / missing values. */
+.screener-table tbody td.is-null { color: #44444c; }
+
+/* Row index gutter (optional, used by table.js). */
+.screener-table .row-idx {
+  color: #44444c;
+  font-size: 10px;
+  text-align: right;
+}

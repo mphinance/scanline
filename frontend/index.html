@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON SCREENER</title>
+  <meta name="description" content="The most complete market screener. A quant analytics layer over live market data, in synthwave." />
+
+  <!-- Design system: tokens + base, then layout grid, then table styling. -->
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/table.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ============ TOP BAR ============ -->
+    <header id="topbar">
+      <div class="brand">
+        <span class="brand-mark">&#9650; NEON</span>
+        <span class="brand-sub">Screener</span>
+      </div>
+
+      <!-- market switcher slot (app.js fills this with a styled select) -->
+      <div id="market-switcher"></div>
+
+      <!-- actions slot (later: saved screens, export, refresh toggle) -->
+      <div id="topbar-actions">
+        <div class="slot-placeholder" id="topbar-actions-ph">actions load here</div>
+      </div>
+
+      <!-- status slot (app.js fills: market / matches / latency) -->
+      <div id="status-bar"></div>
+    </header>
+
+    <!-- ============ LEFT RAIL ============ -->
+    <aside id="left-rail">
+      <!-- Each rail section exposes an EXACT child slot id for a later module. -->
+
+      <section class="rail-section">
+        <div class="rail-head"><span class="rail-title">Presets</span></div>
+        <div class="rail-body">
+          <div id="preset-panel" class="slot-placeholder">preset module loads here</div>
+        </div>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span class="rail-title">Filters</span></div>
+        <div class="rail-body">
+          <div id="filter-panel" class="slot-placeholder">filter module loads here</div>
+        </div>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span class="rail-title">Columns</span></div>
+        <div class="rail-body">
+          <div id="column-panel" class="slot-placeholder">column module loads here</div>
+        </div>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span class="rail-title">Factor Score</span></div>
+        <div class="rail-body">
+          <div id="factor-panel" class="slot-placeholder">factor module loads here</div>
+        </div>
+      </section>
+
+      <section class="rail-section">
+        <div class="rail-head"><span class="rail-title">Saved</span></div>
+        <div class="rail-body">
+          <div id="saved-panel" class="slot-placeholder">saved screens load here</div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ============ MAIN PANEL ============ -->
+    <main id="main-panel">
+      <div id="toolbar">
+        <!-- table toolbar slot (app.js adds the Run Scan button; later: export, density) -->
+        <div id="table-toolbar"></div>
+      </div>
+
+      <!-- the live data table renders here (table.js) -->
+      <div id="table-host"></div>
+
+      <!-- summary-stat footer mounts here (later: per-column count/mean/etc) -->
+      <div id="summary-footer"></div>
+    </main>
+
+    <!-- ============ APP FOOTER ============ -->
+    <footer id="app-footer">
+      <span>NEON SCREENER</span>
+      <span class="sep">|</span>
+      <span>quant analytics over live market data</span>
+      <span class="sep">|</span>
+      <span>no auth, delayed data</span>
+    </footer>
+
+  </div>
+
+  <!-- ============ FLOATING REGIONS (outside the grid) ============ -->
+  <!-- row detail drawer mounts here -->
+  <div id="drawer-host"></div>
+  <!-- command palette (Ctrl/Cmd-K) mounts here -->
+  <div id="command-palette-host"></div>
+  <!-- toasts append here -->
+  <div id="toast-host"></div>
+
+  <!-- ============ CORE MODULES (load order matters) ============ -->
+  <!-- state, api, format must load before table; table before app. They are
+       ES modules, so app.js (which imports them) is the single real entry,
+       but we list the chain for clarity and so each is parseable on its own. -->
+  <script type="module" src="js/format.js"></script>
+  <script type="module" src="js/api.js"></script>
+  <script type="module" src="js/state.js"></script>
+  <script type="module" src="js/table.js"></script>
+  <script type="module" src="js/app.js"></script>
+
+  <!-- =================================================================== -->
+  <!-- MODULE SCRIPTS: parallel agents append here                         -->
+  <!-- Add ONE line per feature module below, after app.js, e.g.:          -->
+  <!--   <script type="module" src="js/filters.js"></script>               -->
+  <!-- Each module calls window.Screener.registerModule(name, initFn).     -->
+  <!-- Reserved (do not create yet, owned by later waves): filters.js,     -->
+  <!-- presets.js, columns.js, factor.js, saved.js, detail.js,             -->
+  <!-- keyboard.js, command-palette.js, summary.js, heatmap.js.            -->
+  <!-- =================================================================== -->
+
+</body>
+</html>

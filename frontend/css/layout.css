@@ -1,0 +1,206 @@
+/* layout.css — the app grid.
+ * Top bar, left rail, main panel, footer, and drawer region.
+ * High-density terminal frame. No em dashes. */
+
+#app {
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr var(--footer-h);
+  grid-template-columns: var(--rail-w) 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "rail   main"
+    "footer footer";
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ---- Top bar ---- */
+#topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.brand .brand-mark {
+  color: var(--cyan);
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+  font-size: 16px;
+}
+.brand .brand-sub {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+#market-switcher { display: flex; align-items: center; gap: var(--sp-2); }
+#topbar-actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+
+#status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#status-bar .stat-k { color: var(--muted); }
+#status-bar .stat-v { color: var(--cyan); }
+#status-bar .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+#status-bar .dot.busy { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: pulse 1s infinite; }
+#status-bar .dot.err { background: var(--pink); box-shadow: 0 0 8px var(--pink); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+/* ---- Left rail ---- */
+#left-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(18, 18, 22, 0.5), rgba(10, 10, 12, 0.5));
+}
+
+.rail-section {
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+.rail-section > .rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.rail-section > .rail-head .rail-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.rail-section > .rail-body { padding: var(--sp-3); }
+
+/* ---- Main panel ---- */
+#main-panel {
+  grid-area: main;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "toolbar"
+    "table"
+    "footer";
+  min-width: 0;
+  overflow: hidden;
+}
+
+#toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+#table-toolbar { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
+
+#table-host {
+  grid-area: table;
+  position: relative;
+  overflow: auto;
+  min-height: 0;
+}
+
+#summary-footer {
+  grid-area: footer;
+  border-top: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  min-height: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+#summary-footer:empty { display: none; }
+
+/* ---- App footer (status line) ---- */
+#app-footer {
+  grid-area: footer;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  border-top: 1px solid var(--line);
+  background: var(--glass-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  z-index: 10;
+}
+#app-footer .sep { color: var(--line); }
+
+/* ---- Drawer region (row detail mounts here) ---- */
+#drawer-host {
+  position: fixed;
+  top: var(--topbar-h);
+  right: 0;
+  bottom: var(--footer-h);
+  width: 420px;
+  max-width: 92vw;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+  background: var(--glass-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-left: 1px solid rgba(0, 240, 255, 0.35);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.5);
+  z-index: 40;
+  overflow-y: auto;
+}
+#drawer-host.open { transform: translateX(0); }
+#drawer-host:empty { display: none; }
+
+/* ---- Command palette host ---- */
+#command-palette-host {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+}
+#command-palette-host.open { display: block; }
