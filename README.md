@@ -5,18 +5,17 @@
 [![MCP](https://img.shields.io/badge/MCP-16_tools-b026ff)](AGENTS.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-00ff88)](LICENSE)
 
-The most complete market screener of all time. A **quant analytics layer** on top of
-TradingView's data, not a TradingView clone. Built in the synthwave / TraderDaddy /
-Bloomberg-terminal aesthetic.
+A market screener with a quant-analytics layer on top of TradingView's data. Synthwave
+terminal look.
 
-Powered by [`tradingview-screener`](https://github.com/shner-elmo/TradingView-Screener) for live,
-no-auth delayed data across stocks, crypto, forex, futures, bonds, and CFDs. Filtering is table
-stakes. The point of this build is everything you do to the data *after* it lands: computed
-columns, factor scoring, in-result statistics, multi-key sort, client-side analytics.
+Live, no-auth delayed data across stocks, crypto, forex, futures, bonds, and CFDs, via
+[`tradingview-screener`](https://github.com/shner-elmo/TradingView-Screener). Filtering is the
+easy part. What this adds is everything you run on the result after it lands: computed columns,
+factor scoring, in-result statistics, multi-key sort, client-side analytics.
 
-Drive it from the browser, from the HTTP API, or from an AI agent: the same engine is exposed
-over the **Model Context Protocol**, so Claude can screen, score, and rank markets for you in
-plain language. See [MCP server](#mcp-server-screen-from-an-agent) below.
+Drive it from the browser, the HTTP API, or an AI agent. The same engine is exposed over the
+**Model Context Protocol**, so Claude can screen, score, and rank markets in plain language. See
+[MCP server](#mcp-server-screen-from-an-agent) below.
 
 The repo is two halves. The **app** (`backend/` + `frontend/`) is the full screener you run at
 home. The **showcase** (`showcase/`) is a static, pure-TradingView demo, a widget gallery plus a
@@ -33,7 +32,7 @@ Hit `\` for full-table mode: the rail folds away and the factor-ranked table tak
 
 ![Full-table mode](docs/fulltable.png)
 
-## What makes it more than a clone
+## The analytics layer
 
 - **Computed columns.** Define your own derived fields with a safe expression engine, e.g.
   `(high-low)/close*100`, `close/sma50`, `volume*close`. Evaluated server-side with a sandboxed
@@ -65,10 +64,9 @@ Hit `\` for full-table mode: the rail folds away and the factor-ranked table tak
   **Stacked EMA Ribbon** on the real Fibonacci periods `close > EMA8 > EMA21 > EMA34 > EMA55 > EMA89`,
   plus MACD bull/bear cross, Stochastic and Stoch RSI crosses, RSI-reclaims-50, Awesome Oscillator
   zero cross, CCI reversal, VWAP reclaim, EMA 8/21 flip, ADX strong-trend, Parabolic SAR, Williams
-  %R, and TradingView's own Strong Buy rating. No faked periods, every field is an actual scanner field.
-- **Multi-timeframe signals.** The kind that only became possible once the field universe was
-  confirmed: Triple Screen Bull / Bear (RSI aligned above or below 50 on daily, weekly, and monthly
-  at once) and MACD aligned bullish on both daily and weekly.
+  %R, and TradingView's own Strong Buy rating. Every period is a real scanner field, not a faked one.
+- **Multi-timeframe signals.** Triple Screen Bull / Bear (RSI aligned above or below 50 on daily,
+  weekly, and monthly at once) and MACD aligned bullish on both daily and weekly.
 - **Multi-timeframe columns.** Toggle 1D / 1W / 1M / 1H / 4H and any technical column gets its
   suffixed siblings added alongside, so you can read `RSI`, `RSI|1W`, and `RSI|1M` side by side.
   Fundamentals are never suffixed.
@@ -89,28 +87,6 @@ Hit `\` for full-table mode: the rail folds away and the factor-ranked table tak
 - Row detail drawer with a performance sparkline. Saved screens and a watchlist (localStorage).
   CSV export. Auto-refresh. Command palette (Ctrl-K) and full keyboard navigation.
 
-## Versus the TradingView web screener
-
-Their web screener filters a single market into a flat table. This does that, then keeps going
-with things their screener simply does not offer:
-
-- **Math on the result, not just filters.** Define computed columns with a real expression engine
-  (`(high-low)/close*100`, `close/sma50`, `volume*close`) and rank by them. The web screener has
-  no formula columns.
-- **Composite factor scoring.** Blend any set of fields into one direction-aware weighted z-score
-  and sort the market by it. There is no factor model in the web tool.
-- **In-result statistics.** `zscore`, `pctrank`, `rank`, and `norm` computed across the returned
-  set, so you see where each row sits inside *your* screen, not the whole universe.
-- **True multi-key sort.** Primary, secondary, and tertiary keys with priority badges, not one
-  sort column.
-- **One field universe, six markets, one switch.** Stocks, crypto, forex, futures, bonds, and CFDs
-  from the same surface. The web screener makes you pick a context up front.
-- **The full field catalog, searchable.** ~190 curated friendly-labelled fields lead and every
-  other queryable field (1000+) is reachable, probed live so none of them error.
-- **Yours to script.** An open HTTP API and an MCP server. You can wire it into an agent, a
-  notebook, or a cron. Their screener is a closed web page.
-- **No account, no login, no upsell.** Live delayed data with nothing to sign up for.
-
 ## MCP server (screen from an agent)
 
 The same live screen engine is exposed over the [Model Context Protocol](https://modelcontextprotocol.io),
@@ -122,7 +98,7 @@ sort), `run_preset`, `run_factor_preset`, `search_fields`, `list_operators`, `li
 `list_factor_presets`, `list_markets`, `lookup_symbol`, and `server_stats`. Cross-field filters
 work out of the box, so `{"field":"SMA50","op":"crosses_above","value":"SMA200"}` is a golden cross.
 
-Symbol intelligence (TradingView, AI'ed): `analyze` reads a chart into structured, plain-language
+Symbol intelligence: `analyze` reads a chart into structured, plain-language
 technical analysis (trend, momentum, range, rating, signals) and is **multi-timeframe in a single
 call**, RSI and MACD bias on the 1h, 4h, 1d, 1w, and 1m at once with an alignment verdict, so
 nobody has to swap timeframes. Plus `technical_rating` (the TradingView gauge across timeframes),

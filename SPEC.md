@@ -1,7 +1,6 @@
 # SPEC - SCANLINE
 
-> The most complete market screener of all time. A **quant analytics layer** on top of
-> TradingView's data - not a TradingView clone. Built in Michael Hanko's synthwave /
+> A market screener with a quant-analytics layer on top of TradingView's data, in a synthwave /
 > TraderDaddy / Bloomberg-terminal aesthetic.
 
 ## Goal
