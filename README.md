@@ -13,6 +13,11 @@ Drive it from the browser, from the HTTP API, or from an AI agent: the same engi
 over the **Model Context Protocol**, so Claude can screen, score, and rank markets for you in
 plain language. See [MCP server](#mcp-server-screen-from-an-agent) below.
 
+The repo is two halves. The **app** (`backend/` + `frontend/`) is the full screener you run at
+home. The **showcase** (`showcase/`) is a static, pure-TradingView demo, a widget gallery plus a
+live Lightweight Charts panel, that deploys to GitHub Pages:
+**[mphinance.github.io/screener](https://mphinance.github.io/screener/)**.
+
 ![Power on](docs/boot.gif)
 
 *Every load powers on like an 80s mainframe.*
