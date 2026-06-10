@@ -107,11 +107,21 @@ The same live screen engine is exposed over the [Model Context Protocol](https:/
 so an AI agent can drive it directly. Built on [`fastmcp`](https://github.com/jlowin/fastmcp), it
 reuses the exact pipeline the web app uses, so a screen behaves identically no matter who runs it.
 
-Tools: `screen` (the full engine: filters, computed columns, stats, factor scoring, sort),
-`run_preset`, `run_factor_preset`, `search_fields`, `list_operators`, `list_presets`,
+Screening tools: `screen` (the full engine: filters, computed columns, stats, factor scoring,
+sort), `run_preset`, `run_factor_preset`, `search_fields`, `list_operators`, `list_presets`,
 `list_factor_presets`, `list_markets`, `lookup_symbol`, and `server_stats`. Cross-field filters
 work out of the box, so `{"field":"SMA50","op":"crosses_above","value":"SMA200"}` is a golden cross.
-The full field catalog, presets, and operator reference are also exposed as MCP resources.
+
+Symbol intelligence (TradingView, AI'ed): `analyze` reads a chart into structured, plain-language
+technical analysis (trend, momentum, range, rating, signals) and is **multi-timeframe in a single
+call**, RSI and MACD bias on the 1h, 4h, 1d, 1w, and 1m at once with an alignment verdict, so
+nobody has to swap timeframes. Plus `technical_rating` (the TradingView gauge across timeframes),
+`search_symbols`, `compare`, `chart` (live chart deep-link plus a ready-to-embed widget config),
+and `sector_breakdown`. Everything stays pure TradingView, no outside data.
+
+MCP prompts ship canned workflows (`momentum_breakouts`, `oversold_quality`, `rank_by_factor`,
+`read_symbol`). The full field catalog, presets, and operator reference are exposed as MCP
+resources.
 
 ```bash
 python run_mcp.py              # stdio, for Claude Desktop / Claude Code

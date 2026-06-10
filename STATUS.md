@@ -43,6 +43,17 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 - **Wave 5** Polish: removed every em dash from source, reduced backdrop-blur radii for snappier
   paint, verified loading/empty/error states.
 - **Wave 6** Final verify, README with fresh screenshots, this status doc.
+- **Wave 11** MCP symbol intelligence + multi-timeframe. Six new tools (`search_symbols`,
+  `compare`, `technical_rating`, `analyze`, `chart`, `sector_breakdown`) and four MCP prompts
+  (`momentum_breakouts`, `oversold_quality`, `rank_by_factor`, `read_symbol`), so 16 tools total.
+  The centerpiece is `analyze`: it reads a symbol's chart into structured trend / momentum / range
+  / rating / signals, and it is multi-timeframe in one call, RSI and MACD bias on the 1h / 4h / 1d
+  / 1w / 1m with an alignment verdict (verified live: TSLA "fully aligned bearish," NVDA and AAPL
+  the short-weak / long-strong split). `chart` returns a live TradingView deep link plus a
+  ready-to-embed Advanced Chart widget config. Everything pure TradingView. `pine/neon_ai_read.pine`
+  is the on-chart twin: a v6 indicator that prints a machine-parseable read for an AI to consume off
+  a screenshot, same signal vocabulary as `analyze`. 9 new tests (offline helpers + live data tools).
+
 - **Wave 10** MCP server. Exposed the live screen engine over the Model Context Protocol with
   `fastmcp`. Factored the screen pipeline out of `app.py` into `backend/pipeline.py` so the HTTP
   API and MCP server run byte-identical logic (no behavior change, full suite still green). Ten

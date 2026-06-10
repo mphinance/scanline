@@ -13,7 +13,7 @@ import asyncio
 import pytest
 from fastmcp import Client
 
-from backend.mcp_server import mcp
+from backend.mcp_server import mcp, normalize_interval, rating_label
 
 
 def _call(name: str, args: dict | None = None):
@@ -32,7 +32,8 @@ def _list():
         async with Client(mcp) as c:
             tools = [t.name for t in await c.list_tools()]
             resources = [str(r.uri) for r in await c.list_resources()]
-            return tools, resources
+            prompts = [p.name for p in await c.list_prompts()]
+            return tools, resources, prompts
 
     return asyncio.run(run())
 
@@ -40,14 +41,38 @@ def _list():
 # --- wiring --------------------------------------------------------------
 
 def test_tools_and_resources_registered():
-    tools, resources = _list()
+    tools, resources, prompts = _list()
     expected_tools = {
         "list_markets", "search_fields", "list_operators", "list_presets",
         "list_factor_presets", "screen", "run_preset", "run_factor_preset",
         "lookup_symbol", "server_stats",
+        # Wave 2: symbol intelligence.
+        "search_symbols", "compare", "technical_rating", "analyze", "chart",
+        "sector_breakdown",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
+    assert {"momentum_breakouts", "oversold_quality", "rank_by_factor", "read_symbol"} <= set(prompts)
+
+
+# --- Wave 2 pure helpers (offline) --------------------------------------
+
+def test_rating_label_bands():
+    assert rating_label(0.7) == "Strong Buy"
+    assert rating_label(0.2) == "Buy"
+    assert rating_label(0.0) == "Neutral"
+    assert rating_label(-0.3) == "Sell"
+    assert rating_label(-0.8) == "Strong Sell"
+    assert rating_label(None) == "Unknown"
+
+
+def test_normalize_interval():
+    assert normalize_interval("4h") == "240"
+    assert normalize_interval("1h") == "60"
+    assert normalize_interval("daily") == "D"
+    assert normalize_interval("1W") == "W"
+    assert normalize_interval("weekly") == "W"
+    assert normalize_interval("nonsense") == "D"
 
 
 # --- discovery (offline) -------------------------------------------------
@@ -134,3 +159,47 @@ def test_screen_live_with_analytics():
 def test_lookup_symbol_live():
     out = _call("lookup_symbol", {"ticker": "AAPL"})
     assert out.get("row", {}).get("name") == "AAPL"
+
+
+@pytest.mark.live
+def test_search_symbols_live():
+    out = _call("search_symbols", {"query": "apple", "limit": 5})
+    names = {s.get("name") for s in out["symbols"]}
+    assert "AAPL" in names
+
+
+@pytest.mark.live
+def test_compare_live():
+    out = _call("compare", {"tickers": ["NVDA", "AMD"]})
+    names = {r.get("name") for r in out["rows"]}
+    assert {"NVDA", "AMD"} <= names
+
+
+@pytest.mark.live
+def test_technical_rating_live():
+    out = _call("technical_rating", {"ticker": "AAPL", "timeframes": ["1d"]})
+    assert "1d" in out["ratings"]
+    assert out["ratings"]["1d"]["overall"] in {
+        "Strong Buy", "Buy", "Neutral", "Sell", "Strong Sell", "Unknown",
+    }
+
+
+@pytest.mark.live
+def test_analyze_multi_timeframe_live():
+    out = _call("analyze", {"ticker": "AAPL"})
+    assert out["summary"]
+    mtf = out["multi_timeframe"]
+    assert "alignment" in mtf
+    # At least the daily and weekly timeframes should populate.
+    assert {"1d", "1w"} <= set(mtf["by_timeframe"].keys())
+    for tf in mtf["by_timeframe"].values():
+        assert tf["bias"] in {"bull", "bear", "mixed"}
+
+
+@pytest.mark.live
+def test_chart_resolves_ticker_live():
+    out = _call("chart", {"ticker": "NVDA", "interval": "4h"})
+    assert out["symbol"] == "NASDAQ:NVDA"
+    assert out["interval"] == "240"
+    assert out["chart_url"].startswith("https://www.tradingview.com/chart/")
+    assert "embed-widget-advanced-chart.js" in out["embed_html"]

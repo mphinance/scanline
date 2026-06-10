@@ -1,0 +1,134 @@
+//@version=6
+// NEON AI READ - a chart indicator meant to be read by an AI.
+//
+// Most indicators are drawn for a human to eyeball. This one prints a
+// high-contrast, machine-parseable read of the chart so that when you screenshot
+// a TradingView chart and hand it to an AI (or our MCP `chart` / `analyze`
+// tools), the model reads the state straight off the labels instead of guessing
+// from pixels. It is the on-chart twin of the screener's `analyze` MCP tool, and
+// it speaks the exact same signal vocabulary: the Fibonacci EMA stack, the
+// golden-cross stack, RSI / MACD / Stochastic momentum, ADX trend strength, and
+// 52-week position.
+//
+// The bottom-right "AI READ" box is the point: one delimited string an LLM can
+// parse deterministically, e.g.
+//   AI|trend=UP;rsi=46;macd=BEAR;adx=19;pos52=70%;rvol=0.96;rating=NEUTRAL
+//
+// No em dashes anywhere. Synthwave palette to match NEON SCREENER.
+
+indicator("NEON AI READ", overlay = true)
+
+// ---- Palette (synthwave) ---------------------------------------------------
+cCyan   = #00f0ff
+cPink   = #ff003c
+cGreen  = #00ff88
+cPurple = #b026ff
+cYellow = #ffd166
+cInk    = #0a0a0c
+
+// ---- Fibonacci EMA stack (the signature ribbon) ----------------------------
+ema8  = ta.ema(close, 8)
+ema21 = ta.ema(close, 21)
+ema34 = ta.ema(close, 34)
+ema55 = ta.ema(close, 55)
+ema89 = ta.ema(close, 89)
+
+plot(ema8,  "EMA 8",  color = cCyan,   linewidth = 2)
+plot(ema21, "EMA 21", color = cYellow, linewidth = 2)
+plot(ema34, "EMA 34", color = #ff9f1c, linewidth = 1)
+plot(ema55, "EMA 55", color = cPink,   linewidth = 1)
+plot(ema89, "EMA 89", color = cPurple, linewidth = 2)
+
+full_bull = (ema8 > ema21) and (ema21 > ema34) and (ema34 > ema55) and (ema55 > ema89)
+full_bear = (ema8 < ema21) and (ema21 < ema34) and (ema34 < ema55) and (ema55 < ema89)
+bgcolor(full_bull ? color.new(cGreen, 92) : full_bear ? color.new(cPink, 92) : na, title = "Ribbon bias")
+
+// ---- Trend -----------------------------------------------------------------
+sma50  = ta.sma(close, 50)
+sma200 = ta.sma(close, 200)
+[diPlus, diMinus, adx] = ta.dmi(14, 14)
+
+golden_stack = sma50 > sma200
+above_50     = close > sma50
+above_200    = close > sma200
+ema_fast     = ema8 > ema21
+di_bull      = diPlus > diMinus
+adx_strong   = adx >= 25
+trend_up     = above_50 and above_200 and di_bull
+
+// ---- Momentum --------------------------------------------------------------
+rsi   = ta.rsi(close, 14)
+rsiW  = request.security(syminfo.tickerid, "W", ta.rsi(close, 14), lookahead = barmerge.lookahead_off)
+[macdLine, signalLine, _hist] = ta.macd(close, 12, 26, 9)
+macd_bull = macdLine > signalLine
+k = ta.sma(ta.stoch(close, high, low, 14), 3)
+d = ta.sma(k, 3)
+stoch_bull = k > d
+rsi_state = rsi >= 70 ? "OVERBOUGHT" : rsi <= 30 ? "OVERSOLD" : rsi >= 50 ? "BULL" : "BEAR"
+
+// ---- Range (52 week) -------------------------------------------------------
+hi52 = ta.highest(high, 252)
+lo52 = ta.lowest(low, 252)
+pos52 = (hi52 > lo52) ? (close - lo52) / (hi52 - lo52) * 100 : na
+near_high = not na(pos52) and pos52 >= 97
+near_low  = not na(pos52) and pos52 <= 3
+
+// ---- Relative volume -------------------------------------------------------
+rvol = volume / ta.sma(volume, 10)
+
+// ---- Composite bias -> a TradingView-style rating label --------------------
+// Eight bull/bear conditions, scored to [-1, 1], then mapped with the same
+// bands the screener's analyze tool uses.
+bulls = (above_50 ? 1 : 0) + (above_200 ? 1 : 0) + (golden_stack ? 1 : 0) + (ema_fast ? 1 : 0) + (rsi > 50 ? 1 : 0) + (macd_bull ? 1 : 0) + (stoch_bull ? 1 : 0) + (di_bull ? 1 : 0)
+score = bulls / 8.0 * 2 - 1  // -1 .. 1
+rating = score >= 0.5 ? "STRONG BUY" : score >= 0.1 ? "BUY" : score > -0.1 ? "NEUTRAL" : score > -0.5 ? "SELL" : "STRONG SELL"
+ratingCol = score >= 0.1 ? cGreen : score <= -0.1 ? cPink : cYellow
+
+// ---- Headline signal: aligned bull pullback (same idea as Bounce 2.0) ------
+pullback_buy = full_bull and adx_strong and (k <= 40) and (math.abs((close - ema21) / ema21 * 100) <= 5)
+plotshape(pullback_buy, title = "Aligned pullback", location = location.belowbar, color = color.new(cGreen, 0), style = shape.labelup, text = "AI BUY", textcolor = cInk, size = size.small)
+alertcondition(pullback_buy, title = "NEON AI READ: aligned pullback", message = "Aligned bull pullback on {{ticker}}: ribbon stacked, ADX strong, Stoch oversold near EMA21.")
+
+// Fire an alert whenever the composite rating flips.
+ratingFlip = ta.change(score >= 0.1 ? 1 : score <= -0.1 ? -1 : 0) != 0
+alertcondition(ratingFlip, title = "NEON AI READ: rating changed", message = "NEON AI READ rating changed on {{ticker}}.")
+
+// ---- Human dashboard (top right) -------------------------------------------
+yes(b) => b ? cGreen : cPink
+f1(x) => str.tostring(x, "#.#")
+
+var table dash = table.new(position.top_right, 2, 8, bgcolor = color.new(cInk, 12), border_width = 1, border_color = color.new(cPurple, 70), frame_width = 1, frame_color = color.new(cCyan, 60))
+
+if barstate.islast
+    table.cell(dash, 0, 0, "NEON AI READ", text_color = cCyan, text_halign = text.align_left, text_size = size.small)
+    table.cell(dash, 1, 0, syminfo.ticker, text_color = cCyan, text_halign = text.align_right, text_size = size.small)
+
+    table.cell(dash, 0, 1, "TREND", text_color = color.white, text_halign = text.align_left)
+    table.cell(dash, 1, 1, (trend_up ? "UP" : "DOWN") + " / ADX " + f1(adx), text_color = yes(trend_up), text_halign = text.align_right)
+
+    table.cell(dash, 0, 2, "STACK", text_color = color.white, text_halign = text.align_left)
+    table.cell(dash, 1, 2, full_bull ? "FULL BULL" : full_bear ? "FULL BEAR" : golden_stack ? "GOLDEN" : "MIXED", text_color = yes(golden_stack), text_halign = text.align_right)
+
+    table.cell(dash, 0, 3, "RSI " + f1(rsi), text_color = color.white, text_halign = text.align_left)
+    table.cell(dash, 1, 3, rsi_state + " / W " + f1(rsiW), text_color = rsi >= 50 ? cGreen : cPink, text_halign = text.align_right)
+
+    table.cell(dash, 0, 4, "MACD", text_color = color.white, text_halign = text.align_left)
+    table.cell(dash, 1, 4, macd_bull ? "BULL" : "BEAR", text_color = yes(macd_bull), text_halign = text.align_right)
+
+    table.cell(dash, 0, 5, "52W POS", text_color = color.white, text_halign = text.align_left)
+    table.cell(dash, 1, 5, (na(pos52) ? "n/a" : f1(pos52) + "%") + (near_high ? " HIGH" : near_low ? " LOW" : ""), text_color = cYellow, text_halign = text.align_right)
+
+    table.cell(dash, 0, 6, "RVOL", text_color = color.white, text_halign = text.align_left)
+    table.cell(dash, 1, 6, f1(rvol) + "x", text_color = rvol >= 1.5 ? cGreen : color.gray, text_halign = text.align_right)
+
+    table.cell(dash, 0, 7, "RATING", text_color = color.white, text_halign = text.align_left)
+    table.cell(dash, 1, 7, rating, text_color = ratingCol, text_halign = text.align_right)
+
+// ---- Machine-readable AI READ box (bottom right) ---------------------------
+// One delimited line for an LLM to parse off a screenshot. This is the whole
+// point of the indicator: deterministic, not pixel-guessed.
+aiStr = "AI|trend=" + (trend_up ? "UP" : "DOWN") + ";rsi=" + f1(rsi) + ";macd=" + (macd_bull ? "BULL" : "BEAR") + ";adx=" + f1(adx) + ";stack=" + (full_bull ? "BULL" : full_bear ? "BEAR" : golden_stack ? "GOLDEN" : "MIXED") + ";pos52=" + (na(pos52) ? "na" : f1(pos52) + "%") + ";rvol=" + f1(rvol) + ";rating=" + rating
+
+var table aibox = table.new(position.bottom_right, 1, 1, bgcolor = cInk, border_width = 1, border_color = cCyan, frame_width = 1, frame_color = cGreen)
+if barstate.islast
+    table.cell(aibox, 0, 0, aiStr, text_color = cGreen, text_halign = text.align_left, text_size = size.normal)
