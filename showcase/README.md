@@ -31,7 +31,7 @@ A workflow at `.github/workflows/pages.yml` deploys this folder. One-time setup:
 1. Repo Settings > Pages > Build and deployment > Source: **GitHub Actions**.
 2. Push to `master` (or run the workflow manually).
 
-It goes live at `https://mphinance.github.io/screener/`.
+It goes live at `https://mphinance.github.io/scanline/`.
 
 ## Files
 

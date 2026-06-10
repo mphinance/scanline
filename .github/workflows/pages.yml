@@ -2,7 +2,7 @@ name: Deploy showcase to GitHub Pages
 
 # Publishes the static showcase/ site. After the first run, set the repo's
 # Pages source to "GitHub Actions" (Settings > Pages) and it goes live at
-# https://mphinance.github.io/screener/
+# https://mphinance.github.io/scanline/
 
 on:
   push:

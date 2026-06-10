@@ -31,16 +31,19 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Wave 15** Renamed the GitHub repo as well (`mphinance/screener` to `mphinance/scanline`, done in
+  the GitHub UI). Rewrote every repo hyperlink (CI badge, live-demo badge, Pages URL, OG tags,
+  footer, GitHub links) to the new path and updated the git remote. The live site is now at
+  mphinance.github.io/scanline.
 - **Wave 14** Renamed the project to SCANLINE (was NEON SCREENER) across all code, docs, UI copy,
-  and the MCP server name, in one pass. Kept the GitHub repo name and the live Pages URL stable so
-  nothing breaks. Renamed `pine/neon_ai_read.pine` to `pine/scanline_ai_read.pine`. Fixed a stray
-  em dash in this file. Full suite green after the rename.
+  and the MCP server name, in one pass. Renamed `pine/neon_ai_read.pine` to
+  `pine/scanline_ai_read.pine`. Fixed a stray em dash in this file. Full suite green after the rename.
 - **Wave 13** CI + social + docs. GitHub Actions CI runs the offline suite on every push (green
   badge). Social preview (OG / Twitter meta, favicon, 1200x630 og.png). Full documentation set:
   AGENTS.md, CLAUDE.md, ACKNOWLEDGMENTS.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/MCP.md.
 - **Wave 12** GitHub Pages showcase (`showcase/`): a static, pure-TradingView site, a live widget
   gallery plus a Lightweight Charts panel, deployed to Pages via Actions. Live and serving at
-  mphinance.github.io/screener. The client-side half to the run-at-home app.
+  mphinance.github.io/scanline. The client-side half to the run-at-home app.
 
 - **Wave 0** Scaffold: spec, 46-assertion feature list, deps.
 - **Wave 1** Backend foundation (serial). Fixed: switched to per-market helpers so all 6 markets

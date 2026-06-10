@@ -1,7 +1,7 @@
 # SCANLINE
 
-[![CI](https://github.com/mphinance/screener/actions/workflows/ci.yml/badge.svg)](https://github.com/mphinance/screener/actions/workflows/ci.yml)
-[![Live demo](https://img.shields.io/badge/demo-github_pages-00f0ff)](https://mphinance.github.io/screener/)
+[![CI](https://github.com/mphinance/scanline/actions/workflows/ci.yml/badge.svg)](https://github.com/mphinance/scanline/actions/workflows/ci.yml)
+[![Live demo](https://img.shields.io/badge/demo-github_pages-00f0ff)](https://mphinance.github.io/scanline/)
 [![MCP](https://img.shields.io/badge/MCP-16_tools-b026ff)](AGENTS.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-00ff88)](LICENSE)
 
@@ -21,7 +21,7 @@ plain language. See [MCP server](#mcp-server-screen-from-an-agent) below.
 The repo is two halves. The **app** (`backend/` + `frontend/`) is the full screener you run at
 home. The **showcase** (`showcase/`) is a static, pure-TradingView demo, a widget gallery plus a
 live Lightweight Charts panel, that deploys to GitHub Pages:
-**[mphinance.github.io/screener](https://mphinance.github.io/screener/)**.
+**[mphinance.github.io/scanline](https://mphinance.github.io/scanline/)**.
 
 ![Power on](docs/boot.gif)
 
