@@ -31,6 +31,12 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-19** Added `madzscore` robust z-score stat to the analytics layer. The new
+  `fn="madzscore"` stat uses median and MAD (scaled by 1.4826) instead of mean and std, making
+  factor ranking far more stable when result sets contain extreme outliers (volume spikes, mega-cap
+  vs small-cap market caps). Four new offline tests cover symmetric data, outlier resistance, None
+  handling, and the constant-series edge case. PR #1, merged green.
+
 - **Wave 15** Renamed the GitHub repo as well (`mphinance/screener` to `mphinance/scanline`, done in
   the GitHub UI). Rewrote every repo hyperlink (CI badge, live-demo badge, Pages URL, OG tags,
   footer, GitHub links) to the new path and updated the git remote. The live site is now at
