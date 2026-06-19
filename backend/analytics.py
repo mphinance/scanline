@@ -187,6 +187,14 @@ def _mean_std(nums: list[float]) -> tuple[float, float]:
     return mean, math.sqrt(var)
 
 
+def _median(nums: list[float]) -> float:
+    """Median of a non-empty sorted or unsorted list."""
+    s = sorted(nums)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
 def apply_stats(rows: list[dict], stats: list[dict]) -> list[dict]:
     """Add zscore / pctrank / rank / norm virtual columns.
 
@@ -236,6 +244,19 @@ def apply_stats(rows: list[dict], stats: list[dict]) -> list[dict]:
             for row, v in zip(rows, values):
                 row[colname] = None if v is None else (
                     0.0 if span == 0 else round((v - lo) / span, 4)
+                )
+
+        elif fn == "madzscore":
+            # Robust z-score: (x - median) / (1.4826 * MAD).
+            # MAD = median(|x - median|). The 1.4826 factor makes this
+            # consistent with std for normally distributed data.
+            # Much less sensitive to outliers than a standard z-score.
+            med = _median(present)
+            mad = _median([abs(x - med) for x in present])
+            scale = 1.4826 * mad
+            for row, v in zip(rows, values):
+                row[colname] = None if v is None else (
+                    0.0 if scale == 0 else round((v - med) / scale, 4)
                 )
 
         else:

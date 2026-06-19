@@ -25,7 +25,7 @@ class Computed(BaseModel):
 class Stat(BaseModel):
     """An in-result statistic request."""
 
-    fn: str  # zscore | pctrank | rank | norm
+    fn: str  # zscore | pctrank | rank | norm | madzscore
     field: str
 
 

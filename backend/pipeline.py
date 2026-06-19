@@ -42,7 +42,7 @@ def _query_columns(req: ScreenRequest) -> list[str]:
     derived_ids = {c.id for c in req.computed} | {"factor_score"}
     for sk in req.sort:
         if sk.field not in derived_ids and not sk.field.startswith(
-            ("zscore(", "pctrank(", "rank(", "norm(")
+            ("zscore(", "pctrank(", "rank(", "norm(", "madzscore(")
         ):
             needed.add(sk.field)
     return list(dict.fromkeys([*base_columns, *needed]))
