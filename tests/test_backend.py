@@ -150,6 +150,49 @@ def test_norm():
     assert rows[2]["norm(v)"] == 1.0
 
 
+def test_madzscore_symmetric():
+    # [1,2,3,4,5]: median=3, MAD=1, scale=1.4826
+    rows = [{"v": 1}, {"v": 2}, {"v": 3}, {"v": 4}, {"v": 5}]
+    analytics.apply_stats(rows, [{"fn": "madzscore", "field": "v"}])
+    # Median element is 0
+    assert rows[2]["madzscore(v)"] == pytest.approx(0.0, abs=1e-6)
+    # By symmetry, 1 and 5 should be negatives of each other
+    assert rows[0]["madzscore(v)"] == pytest.approx(-rows[4]["madzscore(v)"], abs=1e-4)
+    # Exactly: (1-3)/(1.4826*1)
+    assert rows[0]["madzscore(v)"] == pytest.approx(-2.0 / 1.4826, abs=1e-4)
+
+
+def test_madzscore_outlier_resistance():
+    # With a large outlier the non-outlier scores stay reasonable.
+    # [1,2,3,4,100]: median=3, |devs|=[2,1,0,1,97], MAD=1, scale=1.4826
+    rows = [{"v": 1}, {"v": 2}, {"v": 3}, {"v": 4}, {"v": 100}]
+    analytics.apply_stats(rows, [{"fn": "madzscore", "field": "v"}])
+    # The median row is still 0
+    assert rows[2]["madzscore(v)"] == pytest.approx(0.0, abs=1e-6)
+    # Non-outlier row 0: (1-3)/1.4826 ~ -1.35; not squashed toward 0
+    assert rows[0]["madzscore(v)"] == pytest.approx(-2.0 / 1.4826, abs=1e-4)
+    # Outlier gets a large score, but does not destroy the rest
+    assert rows[4]["madzscore(v)"] > 50
+
+
+def test_madzscore_none_handling():
+    # None values stay None; present values are computed over the non-None set
+    rows = [{"v": 2}, {"v": None}, {"v": 4}]
+    analytics.apply_stats(rows, [{"fn": "madzscore", "field": "v"}])
+    assert rows[1]["madzscore(v)"] is None
+    # median([2,4])=3, MAD=1, scale=1.4826
+    assert rows[0]["madzscore(v)"] == pytest.approx(-1.0 / 1.4826, abs=1e-4)
+    assert rows[2]["madzscore(v)"] == pytest.approx(1.0 / 1.4826, abs=1e-4)
+
+
+def test_madzscore_constant_returns_zero():
+    # If MAD=0 every value is the median, all scores should be 0.
+    rows = [{"v": 5}, {"v": 5}, {"v": 5}]
+    analytics.apply_stats(rows, [{"fn": "madzscore", "field": "v"}])
+    for row in rows:
+        assert row["madzscore(v)"] == 0.0
+
+
 def test_stats_ignore_none():
     rows = [{"v": 2}, {"v": None}, {"v": 4}]
     analytics.apply_stats(rows, [{"fn": "zscore", "field": "v"}])
