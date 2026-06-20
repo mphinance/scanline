@@ -195,6 +195,19 @@ def _median(nums: list[float]) -> float:
     return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
+def _quantile(sorted_nums: list[float], q: float) -> float:
+    """Quantile q in [0,1] from a sorted list via linear interpolation."""
+    n = len(sorted_nums)
+    if n == 1:
+        return sorted_nums[0]
+    pos = q * (n - 1)
+    lo = int(pos)
+    hi = lo + 1
+    if hi >= n:
+        return sorted_nums[-1]
+    return sorted_nums[lo] + (pos - lo) * (sorted_nums[hi] - sorted_nums[lo])
+
+
 def apply_stats(rows: list[dict], stats: list[dict]) -> list[dict]:
     """Add zscore / pctrank / rank / norm virtual columns.
 
@@ -258,6 +271,22 @@ def apply_stats(rows: list[dict], stats: list[dict]) -> list[dict]:
                 row[colname] = None if v is None else (
                     0.0 if scale == 0 else round((v - med) / scale, 4)
                 )
+
+        elif fn == "winsor":
+            # Winsorized normalization: clip values at the 5th/95th percentile
+            # then normalize the clipped column to [0, 1]. Keeps every row
+            # in the result set while damping the distortion extreme outliers
+            # cause in min-max normalization. Ideal for factor scoring.
+            s = sorted(present)
+            lo_clip = _quantile(s, 0.05)
+            hi_clip = _quantile(s, 0.95)
+            span = hi_clip - lo_clip
+            for row, v in zip(rows, values):
+                if v is None:
+                    row[colname] = None
+                else:
+                    clipped = max(lo_clip, min(hi_clip, v))
+                    row[colname] = 0.0 if span == 0 else round((clipped - lo_clip) / span, 4)
 
         else:
             for row in rows:
