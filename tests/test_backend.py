@@ -201,6 +201,63 @@ def test_stats_ignore_none():
     assert rows[0]["zscore(v)"] == pytest.approx(-1.0, abs=1e-6)
 
 
+# --- winsor stat ---------------------------------------------------------
+
+def test_winsor_clips_outliers():
+    # 20 regular values (1..20) plus extreme outliers -1000 and 1000.
+    # Winsor should clip at Q5/Q95 so the inner values still span [0,1]
+    # and the outliers are clamped, not blowing out the range.
+    inner = list(range(1, 21))   # 20 points
+    rows = [{"v": -1000}] + [{"v": x} for x in inner] + [{"v": 1000}]
+    analytics.apply_stats(rows, [{"fn": "winsor", "field": "v"}])
+    col = "winsor(v)"
+    # Bottom outlier should be 0.0, top outlier should be 1.0 (clamped at clip boundaries)
+    assert rows[0][col] == 0.0
+    assert rows[-1][col] == 1.0
+    # Inner min and max should both be in [0, 1]
+    inner_scores = [rows[i + 1][col] for i in range(len(inner))]
+    assert all(0.0 <= s <= 1.0 for s in inner_scores)
+    # Lowest inner value is >= 0, highest is <= 1 and the span is meaningful
+    assert inner_scores[-1] > inner_scores[0]
+
+
+def test_winsor_normal_range_matches_norm():
+    # Without outliers (all values in the inner 5-95% range), winsor and norm
+    # should produce identical results for the extreme points.
+    rows = [{"v": float(x)} for x in range(1, 11)]
+    out_winsor = [dict(r) for r in rows]
+    out_norm = [dict(r) for r in rows]
+    analytics.apply_stats(out_winsor, [{"fn": "winsor", "field": "v"}])
+    analytics.apply_stats(out_norm, [{"fn": "norm", "field": "v"}])
+    # Both should produce 0.0 at the minimum and 1.0 at the maximum
+    assert out_winsor[0]["winsor(v)"] == pytest.approx(0.0, abs=0.05)
+    assert out_winsor[-1]["winsor(v)"] == pytest.approx(1.0, abs=0.05)
+
+
+def test_winsor_none_handling():
+    rows = [{"v": 1}, {"v": None}, {"v": 5}, {"v": 10}]
+    analytics.apply_stats(rows, [{"fn": "winsor", "field": "v"}])
+    col = "winsor(v)"
+    assert rows[1][col] is None
+    # Non-None rows get a score in [0, 1]
+    for i in (0, 2, 3):
+        assert 0.0 <= rows[i][col] <= 1.0
+
+
+def test_winsor_constant_returns_zero():
+    # Constant column: span=0 after clipping, every value should be 0.0.
+    rows = [{"v": 7}, {"v": 7}, {"v": 7}, {"v": 7}, {"v": 7}]
+    analytics.apply_stats(rows, [{"fn": "winsor", "field": "v"}])
+    for row in rows:
+        assert row["winsor(v)"] == 0.0
+
+
+def test_winsor_single_value():
+    rows = [{"v": 42}]
+    analytics.apply_stats(rows, [{"fn": "winsor", "field": "v"}])
+    assert rows[0]["winsor(v)"] == 0.0
+
+
 # --- factor scoring ------------------------------------------------------
 
 def test_apply_factor():
