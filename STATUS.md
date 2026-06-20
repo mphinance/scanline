@@ -31,6 +31,15 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-20** Added `winsor` Winsorized normalization stat to the analytics layer. The
+  new `fn="winsor"` stat clips column values at the 5th/95th percentile then normalizes to [0, 1].
+  Unlike plain `norm`, a single outlier cannot compress all other scores toward the middle of the
+  range -- the clipping absorbs the tail while every row remains in the result. Ideal for building
+  factor scores from raw screener columns (market cap, volume, PE) where extreme values are common.
+  New helper: `_quantile(sorted, q)` with linear interpolation. Five new offline tests cover outlier
+  clamping, agreement with `norm` on inner ranges, None passthrough, constant series, and the
+  single-value edge case. PR #2, merged green.
+
 - **Nightly 2026-06-19** Added `madzscore` robust z-score stat to the analytics layer. The new
   `fn="madzscore"` stat uses median and MAD (scaled by 1.4826) instead of mean and std, making
   factor ranking far more stable when result sets contain extreme outliers (volume spikes, mega-cap
