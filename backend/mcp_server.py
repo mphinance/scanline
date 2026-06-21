@@ -327,8 +327,10 @@ def screen(
              Operators + - * / % ** and abs min max round sqrt log ln floor ceil.
     stats:   in-result statistics computed across the returned set, e.g.
              [{"fn":"zscore","field":"change"},{"fn":"pctrank","field":"volume"}].
-             fn is one of zscore | pctrank | rank | norm | madzscore. Column name is "fn(field)".
-             madzscore is a robust z-score (uses median and MAD, resists outliers).
+             fn is one of zscore | pctrank | rank | norm | madzscore | winsor | decile.
+             Column name is "fn(field)". madzscore uses median+MAD (outlier-resistant).
+             winsor clips at 5th/95th pct then normalizes to [0,1] (factor scoring).
+             decile assigns each row to a decile 1-10 (1=lowest, 10=highest).
     factor:  composite factor score: list of {"field","weight","dir"} with dir
              "high"|"low". Adds a "factor_score" column and ranks by it when no
              explicit sort is given.

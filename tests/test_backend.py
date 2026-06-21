@@ -258,6 +258,60 @@ def test_winsor_single_value():
     assert rows[0]["winsor(v)"] == 0.0
 
 
+# --- decile stat ---------------------------------------------------------
+
+def test_decile_basic():
+    # 10 evenly spaced values should each land in a distinct decile.
+    rows = [{"v": float(i)} for i in range(1, 11)]
+    analytics.apply_stats(rows, [{"fn": "decile", "field": "v"}])
+    col = "decile(v)"
+    deciles = [row[col] for row in rows]
+    assert deciles[0] == 1
+    assert deciles[-1] == 10
+    assert deciles == sorted(deciles)
+    assert all(1 <= d <= 10 for d in deciles)
+
+
+def test_decile_top_and_bottom():
+    rows = [{"v": 0.0}, {"v": 50.0}, {"v": 100.0}]
+    analytics.apply_stats(rows, [{"fn": "decile", "field": "v"}])
+    col = "decile(v)"
+    assert rows[0][col] == 1
+    assert rows[-1][col] == 10
+
+
+def test_decile_none_handling():
+    rows = [{"v": 1}, {"v": None}, {"v": 5}, {"v": 10}]
+    analytics.apply_stats(rows, [{"fn": "decile", "field": "v"}])
+    col = "decile(v)"
+    assert rows[1][col] is None
+    assert all(rows[i][col] is not None for i in (0, 2, 3))
+    assert all(1 <= rows[i][col] <= 10 for i in (0, 2, 3))
+
+
+def test_decile_constant_returns_one():
+    # Constant series: no ordering possible, all fall in decile 1.
+    rows = [{"v": 7}, {"v": 7}, {"v": 7}]
+    analytics.apply_stats(rows, [{"fn": "decile", "field": "v"}])
+    assert all(row["decile(v)"] == 1 for row in rows)
+
+
+def test_decile_single_value():
+    rows = [{"v": 42}]
+    analytics.apply_stats(rows, [{"fn": "decile", "field": "v"}])
+    assert rows[0]["decile(v)"] == 1
+
+
+def test_decile_ties_same_decile():
+    # Tied values must land in the same decile.
+    rows = [{"v": 1}, {"v": 1}, {"v": 5}, {"v": 10}, {"v": 10}]
+    analytics.apply_stats(rows, [{"fn": "decile", "field": "v"}])
+    col = "decile(v)"
+    assert rows[0][col] == rows[1][col]
+    assert rows[3][col] == rows[4][col]
+    assert rows[0][col] < rows[2][col] < rows[3][col]
+
+
 # --- factor scoring ------------------------------------------------------
 
 def test_apply_factor():
