@@ -31,6 +31,16 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-21** Added `decile` stat to the analytics layer. The new `fn="decile"` stat
+  assigns each row to a decile 1-10 based on its value (1=lowest 10%, 10=highest 10%). Boundaries
+  are set at the 10th through 90th percentile via linear interpolation, so ties near a boundary
+  consistently fall into the lower decile. This is the standard quant tool for "top-decile momentum"
+  and factor bucketing -- coarser than `pctrank` (continuous) and more interpretable than `rank`
+  (1..N), and directly usable in screens like "show me decile-10 stocks ranked by volume". Also
+  updated the `screen` MCP tool docstring to list all seven stats including `winsor` (omitted last
+  nightly). Six new offline tests cover the basic ladder, top/bottom pinning, None passthrough,
+  constant series, single value, and tie consistency. PR #3, merged green.
+
 - **Nightly 2026-06-20** Added `winsor` Winsorized normalization stat to the analytics layer. The
   new `fn="winsor"` stat clips column values at the 5th/95th percentile then normalizes to [0, 1].
   Unlike plain `norm`, a single outlier cannot compress all other scores toward the middle of the

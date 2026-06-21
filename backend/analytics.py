@@ -288,6 +288,23 @@ def apply_stats(rows: list[dict], stats: list[dict]) -> list[dict]:
                     clipped = max(lo_clip, min(hi_clip, v))
                     row[colname] = 0.0 if span == 0 else round((clipped - lo_clip) / span, 4)
 
+        elif fn == "decile":
+            # Decile 1-10: 1 is the lowest 10%, 10 is the highest 10%.
+            # Boundaries are set at the 10th, 20th, ..., 90th percentile via
+            # linear interpolation, so ties near boundaries fall into the lower
+            # decile consistently. Useful for bucketing factor scores.
+            s = sorted(present)
+            breaks = [_quantile(s, k / 10.0) for k in range(1, 10)]
+            for row, v in zip(rows, values):
+                if v is None:
+                    row[colname] = None
+                else:
+                    d = 1
+                    for b in breaks:
+                        if v > b:
+                            d += 1
+                    row[colname] = d
+
         else:
             for row in rows:
                 row[colname] = None
