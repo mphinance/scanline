@@ -39,11 +39,12 @@ def _query_columns(req: ScreenRequest) -> list[str]:
         for w in req.factor.weights:
             needed.add(w.field)
     # Sort on a base (non-derived) field needs that column present too.
+    # Virtual stat columns must NOT be added to the query; they are computed
+    # after the query returns. All stat fn names must be listed here.
     derived_ids = {c.id for c in req.computed} | {"factor_score"}
+    _STAT_PREFIXES = ("zscore(", "pctrank(", "rank(", "norm(", "madzscore(", "winsor(", "decile(")
     for sk in req.sort:
-        if sk.field not in derived_ids and not sk.field.startswith(
-            ("zscore(", "pctrank(", "rank(", "norm(", "madzscore(")
-        ):
+        if sk.field not in derived_ids and not sk.field.startswith(_STAT_PREFIXES):
             needed.add(sk.field)
     return list(dict.fromkeys([*base_columns, *needed]))
 

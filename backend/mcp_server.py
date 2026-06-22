@@ -839,6 +839,69 @@ def sector_breakdown(market: str = "america", filters: list[dict] | None = None,
     return {"sampled": len(resp["rows"]), "universe": resp["count"], "sectors": sectors}
 
 
+@mcp.tool
+def top_movers(
+    market: str = "america",
+    n: int = 10,
+    filters: list[dict] | None = None,
+    columns: list[str] | None = None,
+) -> dict:
+    """Get the top N gainers and top N losers in any market right now.
+
+    The fastest entry point for momentum, gap-fill, or reversal ideas. Two
+    separate ranked lists in one call: stocks sorted by change% descending
+    (gainers) and ascending (losers), both filtered the same way.
+
+    market:  one of list_markets() ids (america, crypto, forex, ...).
+    n:       movers to show on each side, 1-50 (default 10).
+    filters: optional extra filters applied to both lists, e.g. a market_cap
+             floor: [{"field":"market_cap_basic","op":">","value":1e9}].
+    columns: fields to include. Defaults to name, description, close, change,
+             volume, market_cap_basic, sector.
+
+    Returns {market, universe, gainers:[rows], losers:[rows],
+    gainers_table, losers_table}.
+    """
+    default_cols = ["name", "description", "close", "change", "volume", "market_cap_basic", "sector"]
+    cols = [c for c in (columns or default_cols) if validate_field(c)]
+    # Ensure `change` is always present so the sort and table are meaningful.
+    if "change" not in cols:
+        cols.insert(1, "change")
+    n_capped = max(1, min(n, 50))
+    base_filters = [Filter(**f) for f in (filters or [])]
+
+    gainers_req = ScreenRequest(
+        market=market,
+        filters=base_filters,
+        columns=cols,
+        sort=[SortKey(field="change", dir="desc")],
+        limit=n_capped,
+    )
+    losers_req = ScreenRequest(
+        market=market,
+        filters=base_filters,
+        columns=cols,
+        sort=[SortKey(field="change", dir="asc")],
+        limit=n_capped,
+    )
+
+    gainers_out = _run(gainers_req, table_rows=n_capped)
+    if gainers_out.get("error"):
+        return gainers_out
+    losers_out = _run(losers_req, table_rows=n_capped)
+    if losers_out.get("error"):
+        return losers_out
+
+    return {
+        "market": market,
+        "universe": gainers_out.get("count", 0),
+        "gainers": gainers_out.get("rows", []),
+        "losers": losers_out.get("rows", []),
+        "gainers_table": gainers_out.get("table", ""),
+        "losers_table": losers_out.get("table", ""),
+    }
+
+
 # ----------------------------------------------------------------------------
 # Prompts: canned, modern screening workflows the model can launch
 # ----------------------------------------------------------------------------

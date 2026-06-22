@@ -341,6 +341,37 @@ def test_factor_direction_low():
     assert rows[0]["factor_score"] > rows[2]["factor_score"]
 
 
+# --- pipeline sort prefix guard ------------------------------------------
+
+def test_query_columns_excludes_stat_sort_fields():
+    # Sorting by a stat virtual column (winsor/decile/zscore/etc.) must NOT
+    # add that virtual name to the query column set. Before the fix, winsor(
+    # and decile( were missing from the guard and would leak into the query.
+    from backend.models import ScreenRequest, Stat, SortKey
+    from backend.pipeline import _query_columns
+
+    req = ScreenRequest(
+        market="america",
+        columns=["name", "close", "RSI"],
+        stats=[
+            Stat(fn="winsor", field="RSI"),
+            Stat(fn="decile", field="close"),
+        ],
+        sort=[
+            SortKey(field="winsor(RSI)", dir="desc"),
+            SortKey(field="decile(close)", dir="asc"),
+            SortKey(field="close", dir="desc"),
+        ],
+    )
+    cols = _query_columns(req)
+    # Virtual stat columns must not appear as query columns.
+    assert "winsor(RSI)" not in cols
+    assert "decile(close)" not in cols
+    # Real columns must still be present.
+    assert "close" in cols
+    assert "RSI" in cols
+
+
 # --- live API tests ------------------------------------------------------
 
 @pytest.mark.live

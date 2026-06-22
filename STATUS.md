@@ -31,6 +31,18 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-22** Added `top_movers` MCP tool. Returns the top N gainers
+  and top N losers in any market in a single call, with optional extra filters (e.g.
+  a market-cap floor) applied to both lists. The most common trader query ("what moved
+  today?") now has a dedicated entry point rather than requiring two separate `screen`
+  calls. Also fixed a silent sort-prefix bug in `pipeline._query_columns`: sorting by
+  a `winsor(` or `decile(` stat column would incorrectly add the virtual column name
+  to the TradingView query rather than skipping it. Both stat fn names are now listed
+  in the guard alongside zscore, pctrank, rank, norm, and madzscore. Two new offline
+  tests: one wiring check (top_movers is registered) and one pipeline guard test
+  (winsor/decile sort fields are excluded from the query column set). Three live tests
+  cover gainers/losers sort order and filter passthrough. PR #4, merged green.
+
 - **Nightly 2026-06-21** Added `decile` stat to the analytics layer. The new `fn="decile"` stat
   assigns each row to a decile 1-10 based on its value (1=lowest 10%, 10=highest 10%). Boundaries
   are set at the 10th through 90th percentile via linear interpolation, so ties near a boundary
