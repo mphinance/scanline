@@ -49,6 +49,8 @@ def test_tools_and_resources_registered():
         # Wave 2: symbol intelligence.
         "search_symbols", "compare", "technical_rating", "analyze", "chart",
         "sector_breakdown",
+        # Nightly 2026-06-22: top movers.
+        "top_movers",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -203,3 +205,38 @@ def test_chart_resolves_ticker_live():
     assert out["interval"] == "240"
     assert out["chart_url"].startswith("https://www.tradingview.com/chart/")
     assert "embed-widget-advanced-chart.js" in out["embed_html"]
+
+
+# --- top_movers (offline wiring + live data) ----------------------------
+
+def test_top_movers_is_registered():
+    tools, _, _ = _list()
+    assert "top_movers" in tools
+
+
+@pytest.mark.live
+def test_top_movers_live():
+    out = _call("top_movers", {"market": "america", "n": 5})
+    assert "gainers" in out
+    assert "losers" in out
+    assert len(out["gainers"]) <= 5
+    assert len(out["losers"]) <= 5
+    assert out["gainers_table"]
+    assert out["losers_table"]
+    # Gainers should be sorted descending by change.
+    changes = [r.get("change") for r in out["gainers"] if r.get("change") is not None]
+    assert changes == sorted(changes, reverse=True)
+    # Losers should be sorted ascending.
+    changes_l = [r.get("change") for r in out["losers"] if r.get("change") is not None]
+    assert changes_l == sorted(changes_l)
+
+
+@pytest.mark.live
+def test_top_movers_with_filter_live():
+    out = _call("top_movers", {
+        "market": "america",
+        "n": 3,
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e10}],
+    })
+    assert "gainers" in out and "losers" in out
+    assert out["universe"] > 0
