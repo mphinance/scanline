@@ -839,6 +839,100 @@ def sector_breakdown(market: str = "america", filters: list[dict] | None = None,
     return {"sampled": len(resp["rows"]), "universe": resp["count"], "sectors": sectors}
 
 
+def _compute_breadth(rows: list[dict]) -> dict:
+    """Aggregate a list of screened rows into market breadth indicators.
+
+    Pure function over row data. Returns counts, ratios, moving-average
+    positioning, and RSI distribution so callers can test it offline.
+    """
+    n = len(rows)
+    if not n:
+        return {"sample": 0}
+
+    adv = sum(1 for r in rows if isinstance(r.get("change"), (int, float)) and r["change"] > 0)
+    dec = sum(1 for r in rows if isinstance(r.get("change"), (int, float)) and r["change"] < 0)
+    unc = sum(1 for r in rows if isinstance(r.get("change"), (int, float)) and r["change"] == 0)
+    ad_ratio = round(adv / dec, 3) if dec else None
+
+    changes = [r["change"] for r in rows if isinstance(r.get("change"), (int, float))]
+    avg_change = round(sum(changes) / len(changes), 3) if changes else None
+
+    sma50_rows = [r for r in rows if isinstance(r.get("close"), (int, float)) and isinstance(r.get("SMA50"), (int, float))]
+    pct_above_sma50 = (
+        round(sum(1 for r in sma50_rows if r["close"] > r["SMA50"]) / len(sma50_rows) * 100, 1)
+        if sma50_rows else None
+    )
+
+    sma200_rows = [r for r in rows if isinstance(r.get("close"), (int, float)) and isinstance(r.get("SMA200"), (int, float))]
+    pct_above_sma200 = (
+        round(sum(1 for r in sma200_rows if r["close"] > r["SMA200"]) / len(sma200_rows) * 100, 1)
+        if sma200_rows else None
+    )
+
+    rsi_vals = [r["RSI"] for r in rows if isinstance(r.get("RSI"), (int, float))]
+    rsi_n = len(rsi_vals)
+    if rsi_n:
+        avg_rsi = round(sum(rsi_vals) / rsi_n, 1)
+        pct_overbought = round(sum(1 for v in rsi_vals if v >= 70) / rsi_n * 100, 1)
+        pct_oversold = round(sum(1 for v in rsi_vals if v <= 30) / rsi_n * 100, 1)
+        pct_rsi_neutral = round(sum(1 for v in rsi_vals if 30 < v < 70) / rsi_n * 100, 1)
+    else:
+        avg_rsi = pct_overbought = pct_oversold = pct_rsi_neutral = None
+
+    return {
+        "sample": n,
+        "advancers": adv,
+        "decliners": dec,
+        "unchanged": unc,
+        "ad_ratio": ad_ratio,
+        "pct_advancers": round(adv / n * 100, 1),
+        "pct_decliners": round(dec / n * 100, 1),
+        "avg_change": avg_change,
+        "pct_above_sma50": pct_above_sma50,
+        "pct_above_sma200": pct_above_sma200,
+        "avg_rsi": avg_rsi,
+        "pct_rsi_overbought": pct_overbought,
+        "pct_rsi_oversold": pct_oversold,
+        "pct_rsi_neutral": pct_rsi_neutral,
+    }
+
+
+@mcp.tool
+def market_breadth(
+    market: str = "america",
+    filters: list[dict] | None = None,
+    limit: int = 500,
+) -> dict:
+    """Market breadth indicators: advancers/decliners, % above key MAs, RSI distribution.
+
+    A single-call health read of the market (or a filtered slice of it). Useful
+    for quickly answering "is the market broadly advancing or declining?" and
+    "how stretched is sentiment right now?" before drilling into individual names.
+
+    market:  one of list_markets() ids.
+    filters: optional extra filters, e.g. a market-cap floor to focus on a tier.
+    limit:   rows to sample (default 500; the full scan is often 7000+ stocks).
+
+    Returns {market, universe, sample, advancers, decliners, unchanged, ad_ratio,
+    pct_advancers, pct_decliners, avg_change, pct_above_sma50, pct_above_sma200,
+    avg_rsi, pct_rsi_overbought, pct_rsi_oversold, pct_rsi_neutral}.
+    """
+    req = ScreenRequest(
+        market=market,
+        filters=[Filter(**f) for f in (filters or [])],
+        columns=["name", "close", "change", "RSI", "SMA50", "SMA200"],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+    breadth = _compute_breadth(resp["rows"])
+    breadth["universe"] = resp["count"]
+    breadth["market"] = market
+    return breadth
+
+
 @mcp.tool
 def top_movers(
     market: str = "america",

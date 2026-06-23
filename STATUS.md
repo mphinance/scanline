@@ -31,6 +31,17 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-23** Added `market_breadth` MCP tool. Returns classic breadth
+  indicators for any market (or a filtered slice): advancers/decliners, A/D ratio,
+  average change, % of stocks above SMA50 and SMA200, average RSI, and % of stocks
+  in overbought/oversold/neutral RSI territory. The core aggregation lives in a
+  `_compute_breadth(rows)` pure function so the math is fully testable offline.
+  Five new offline tests cover the basic computation, the empty-rows edge case,
+  the no-decliners case (ad_ratio=None), and the case where SMA/RSI fields are
+  absent. Two live tests verify the tool returns valid data for a broad scan and
+  for a filtered (large-cap) slice. Wiring check added to the tools registration
+  test. PR #5, merged green.
+
 - **Nightly 2026-06-22** Added `top_movers` MCP tool. Returns the top N gainers
   and top N losers in any market in a single call, with optional extra filters (e.g.
   a market-cap floor) applied to both lists. The most common trader query ("what moved

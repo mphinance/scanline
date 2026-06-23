@@ -13,7 +13,7 @@ import asyncio
 import pytest
 from fastmcp import Client
 
-from backend.mcp_server import mcp, normalize_interval, rating_label
+from backend.mcp_server import _compute_breadth, mcp, normalize_interval, rating_label
 
 
 def _call(name: str, args: dict | None = None):
@@ -51,6 +51,8 @@ def test_tools_and_resources_registered():
         "sector_breakdown",
         # Nightly 2026-06-22: top movers.
         "top_movers",
+        # Nightly 2026-06-23: market breadth.
+        "market_breadth",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -240,3 +242,86 @@ def test_top_movers_with_filter_live():
     })
     assert "gainers" in out and "losers" in out
     assert out["universe"] > 0
+
+
+# --- market_breadth (offline wiring + math + live data) -----------------
+
+def test_market_breadth_is_registered():
+    tools, _, _ = _list()
+    assert "market_breadth" in tools
+
+
+def test_compute_breadth_basic():
+    rows = [
+        {"close": 10, "change": 2.0,  "RSI": 65, "SMA50": 9,  "SMA200": 8},
+        {"close": 20, "change": -1.0, "RSI": 28, "SMA50": 22, "SMA200": 18},
+        {"close": 30, "change": 0.0,  "RSI": 55, "SMA50": 28, "SMA200": 25},
+        {"close": 40, "change": 3.0,  "RSI": 72, "SMA50": 35, "SMA200": 30},
+    ]
+    b = _compute_breadth(rows)
+    assert b["sample"] == 4
+    assert b["advancers"] == 2
+    assert b["decliners"] == 1
+    assert b["unchanged"] == 1
+    assert b["ad_ratio"] == pytest.approx(2.0)
+    assert b["pct_advancers"] == pytest.approx(50.0)
+    assert b["pct_decliners"] == pytest.approx(25.0)
+    # Row0 close(10) > SMA50(9), Row2 close(30) > SMA50(28), Row3 close(40) > SMA50(35)
+    # Row1 close(20) < SMA50(22)  -> 3/4 above = 75%
+    assert b["pct_above_sma50"] == pytest.approx(75.0)
+    # All rows have close > SMA200 -> 100%
+    assert b["pct_above_sma200"] == pytest.approx(100.0)
+    # RSI: 65, 28, 55, 72  -> avg = (65+28+55+72)/4 = 55.0
+    assert b["avg_rsi"] == pytest.approx(55.0)
+    # Overbought (>=70): row3(72) -> 1/4 = 25%
+    assert b["pct_rsi_overbought"] == pytest.approx(25.0)
+    # Oversold (<=30): row1(28) -> 1/4 = 25%
+    assert b["pct_rsi_oversold"] == pytest.approx(25.0)
+
+
+def test_compute_breadth_empty():
+    b = _compute_breadth([])
+    assert b == {"sample": 0}
+
+
+def test_compute_breadth_no_decliners():
+    # ad_ratio is None when there are no decliners.
+    rows = [{"close": 5, "change": 1.0, "RSI": 60, "SMA50": 4, "SMA200": 3}]
+    b = _compute_breadth(rows)
+    assert b["decliners"] == 0
+    assert b["ad_ratio"] is None
+    assert b["advancers"] == 1
+
+
+def test_compute_breadth_missing_fields():
+    # Rows without SMA50/SMA200/RSI should produce None for those metrics.
+    rows = [{"close": 10, "change": 1.0}, {"close": 20, "change": -1.0}]
+    b = _compute_breadth(rows)
+    assert b["pct_above_sma50"] is None
+    assert b["pct_above_sma200"] is None
+    assert b["avg_rsi"] is None
+
+
+@pytest.mark.live
+def test_market_breadth_live():
+    out = _call("market_breadth", {"market": "america", "limit": 200})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert out["sample"] <= 200
+    assert out["advancers"] + out["decliners"] + out["unchanged"] == out["sample"]
+    assert 0 <= out["pct_advancers"] <= 100
+    assert 0 <= out["pct_decliners"] <= 100
+    # With a broad US scan, SMA data should be present.
+    assert out["pct_above_sma50"] is not None
+    assert out["pct_above_sma200"] is not None
+
+
+@pytest.mark.live
+def test_market_breadth_with_filter_live():
+    out = _call("market_breadth", {
+        "market": "america",
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e10}],
+        "limit": 100,
+    })
+    assert "sample" in out
+    assert out["sample"] > 0
