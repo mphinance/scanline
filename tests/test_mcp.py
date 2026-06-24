@@ -13,7 +13,13 @@ import asyncio
 import pytest
 from fastmcp import Client
 
-from backend.mcp_server import _compute_breadth, mcp, normalize_interval, rating_label
+from backend.mcp_server import (
+    _compute_breadth,
+    _compute_sector_rotation,
+    mcp,
+    normalize_interval,
+    rating_label,
+)
 
 
 def _call(name: str, args: dict | None = None):
@@ -53,6 +59,8 @@ def test_tools_and_resources_registered():
         "top_movers",
         # Nightly 2026-06-23: market breadth.
         "market_breadth",
+        # Nightly 2026-06-24: sector rotation.
+        "sector_rotation",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -325,3 +333,133 @@ def test_market_breadth_with_filter_live():
     })
     assert "sample" in out
     assert out["sample"] > 0
+
+
+# --- sector_rotation (offline math + live data) --------------------------
+
+def test_sector_rotation_is_registered():
+    tools, _, _ = _list()
+    assert "sector_rotation" in tools
+
+
+def test_compute_sector_rotation_basic():
+    rows = [
+        {"sector": "Tech",    "change": 2.0,  "Perf.1M": 5.0,  "Perf.YTD": 20.0, "RSI": 60, "market_cap_basic": 1e12},
+        {"sector": "Tech",    "change": 3.0,  "Perf.1M": 7.0,  "Perf.YTD": 25.0, "RSI": 65, "market_cap_basic": 5e11},
+        {"sector": "Energy",  "change": -1.0, "Perf.1M": -2.0, "Perf.YTD": -5.0, "RSI": 40, "market_cap_basic": 3e11},
+        {"sector": "Health",  "change": 0.5,  "Perf.1M": 1.0,  "Perf.YTD": 8.0,  "RSI": 52, "market_cap_basic": 2e11},
+    ]
+    result = _compute_sector_rotation(rows)
+    secs = {s["sector"]: s for s in result}
+
+    # Three sectors present.
+    assert len(result) == 3
+    assert set(secs) == {"Tech", "Energy", "Health"}
+
+    # Tech should have the highest momentum_score.
+    assert result[0]["sector"] == "Tech"
+    # Energy (negative across all timeframes) should be last.
+    assert result[-1]["sector"] == "Energy"
+
+    # Per-sector averages.
+    import pytest as _pt
+    assert secs["Tech"]["avg_change"] == _pt.approx(2.5, abs=1e-3)
+    assert secs["Tech"]["avg_perf_1m"] == _pt.approx(6.0, abs=1e-3)
+    assert secs["Tech"]["count"] == 2
+
+    # momentum_score is in [0, 1].
+    for s in result:
+        if s["momentum_score"] is not None:
+            assert 0.0 <= s["momentum_score"] <= 1.0
+
+    # Best scorer is 1.0 or close; worst is 0.0 or close.
+    assert result[0]["momentum_score"] == _pt.approx(1.0, abs=1e-6)
+    assert result[-1]["momentum_score"] == _pt.approx(0.0, abs=1e-6)
+
+
+def test_compute_sector_rotation_empty():
+    result = _compute_sector_rotation([])
+    assert result == []
+
+
+def test_compute_sector_rotation_missing_perf_fields():
+    # Rows without Perf.1M and Perf.YTD: score is based on avg_change only.
+    rows = [
+        {"sector": "Tech",   "change": 3.0,  "RSI": 65},
+        {"sector": "Energy", "change": -1.0, "RSI": 40},
+    ]
+    result = _compute_sector_rotation(rows)
+    secs = {s["sector"]: s for s in result}
+
+    assert secs["Tech"]["avg_perf_1m"] is None
+    assert secs["Tech"]["avg_perf_ytd"] is None
+    # Scoring should still work using avg_change alone.
+    assert result[0]["sector"] == "Tech"
+    assert result[0]["momentum_score"] == 1.0
+    assert result[1]["momentum_score"] == 0.0
+
+
+def test_compute_sector_rotation_single_sector():
+    # Only one sector: normalization undefined, momentum_score is None.
+    rows = [
+        {"sector": "Tech", "change": 2.0, "Perf.1M": 5.0, "Perf.YTD": 20.0, "RSI": 60},
+        {"sector": "Tech", "change": 3.0, "Perf.1M": 7.0, "Perf.YTD": 25.0, "RSI": 65},
+    ]
+    result = _compute_sector_rotation(rows)
+    assert len(result) == 1
+    # Single sector cannot be normalized against others, score is None.
+    assert result[0]["momentum_score"] is None
+
+
+def test_compute_sector_rotation_unknown_sector():
+    # Rows without a sector field land in "Unknown".
+    rows = [
+        {"change": 1.0, "Perf.1M": 2.0, "Perf.YTD": 5.0},
+        {"sector": None, "change": -1.0},
+    ]
+    result = _compute_sector_rotation(rows)
+    secs = {s["sector"]: s for s in result}
+    assert "Unknown" in secs
+    assert secs["Unknown"]["count"] == 2
+
+
+def test_compute_sector_rotation_sorted_desc():
+    rows = [
+        {"sector": "A", "change": 5.0,  "Perf.1M": 10.0, "Perf.YTD": 30.0},
+        {"sector": "B", "change": 2.0,  "Perf.1M": 4.0,  "Perf.YTD": 10.0},
+        {"sector": "C", "change": -2.0, "Perf.1M": -5.0, "Perf.YTD": -10.0},
+    ]
+    result = _compute_sector_rotation(rows)
+    scores = [s["momentum_score"] for s in result if s["momentum_score"] is not None]
+    assert scores == sorted(scores, reverse=True)
+
+
+@pytest.mark.live
+def test_sector_rotation_live():
+    out = _call("sector_rotation", {"market": "america", "limit": 500})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert out["sampled"] <= 500
+    sects = out["sectors"]
+    assert len(sects) > 3
+    # Each sector has required fields.
+    for s in sects:
+        assert "sector" in s
+        assert "count" in s
+        assert "avg_change" in s
+        assert "momentum_score" in s
+    # Sorted desc by momentum_score (None values trailing).
+    scores = [s["momentum_score"] for s in sects]
+    non_null = [v for v in scores if v is not None]
+    assert non_null == sorted(non_null, reverse=True)
+
+
+@pytest.mark.live
+def test_sector_rotation_with_filter_live():
+    out = _call("sector_rotation", {
+        "market": "america",
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e9}],
+        "limit": 300,
+    })
+    assert "sectors" in out
+    assert out["sampled"] > 0

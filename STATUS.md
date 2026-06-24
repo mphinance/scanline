@@ -31,6 +31,20 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-24** Added `sector_rotation` MCP tool. Aggregates a screened
+  universe by sector and returns multi-timeframe momentum metrics: avg 1-day change,
+  avg 1-month performance, avg YTD performance, avg RSI, total market cap, and a
+  composite `momentum_score` (weighted normalized blend: 50% change, 30% 1M, 20% YTD,
+  scaled 0-1 so sectors can be compared at a glance). Sectors are sorted descending by
+  momentum_score so the top entry is always the sector with the strongest current
+  momentum. The core aggregation lives in a `_compute_sector_rotation(rows)` pure
+  function. Six offline tests cover the basic multi-sector computation, empty rows,
+  missing perf fields (score falls back to avg_change only), single-sector edge case
+  (score is None when normalization is undefined), unknown-sector bucketing, and
+  descending sort order. Two live tests verify the tool returns valid data for a broad
+  scan and for a large-cap filtered slice. Wiring check added to the tools registration
+  test. PR #6, merged green.
+
 - **Nightly 2026-06-23** Added `market_breadth` MCP tool. Returns classic breadth
   indicators for any market (or a filtered slice): advancers/decliners, A/D ratio,
   average change, % of stocks above SMA50 and SMA200, average RSI, and % of stocks
