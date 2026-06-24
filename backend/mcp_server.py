@@ -933,6 +933,130 @@ def market_breadth(
     return breadth
 
 
+def _sect_avg(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 3) if values else None
+
+
+def _sect_norm(sectors: list[dict], key: str) -> dict[str, float]:
+    """Normalize a sector metric to [0, 1] across all sectors that have it."""
+    pairs = [(s["sector"], s[key]) for s in sectors if s.get(key) is not None]
+    if len(pairs) < 2:
+        return {}
+    nums = [v for _, v in pairs]
+    lo, hi = min(nums), max(nums)
+    span = hi - lo
+    if span == 0:
+        return {sec: 0.0 for sec, _ in pairs}
+    return {sec: (v - lo) / span for sec, v in pairs}
+
+
+def _compute_sector_rotation(rows: list[dict]) -> list[dict]:
+    """Aggregate rows by sector into multi-timeframe momentum metrics.
+
+    Pure function over row data. Each sector dict carries:
+    sector, count, avg_change, avg_perf_1m, avg_perf_ytd, avg_rsi,
+    total_market_cap, momentum_score.
+
+    momentum_score is a weighted normalized blend:
+      avg_change 50%, avg_perf_1m 30%, avg_perf_ytd 20%.
+    Sorted descending by momentum_score.
+    """
+    buckets: dict[str, dict] = {}
+    for r in rows:
+        sec = r.get("sector") or "Unknown"
+        b = buckets.setdefault(
+            sec,
+            {"changes": [], "perf_1m": [], "perf_ytd": [], "rsi": [], "mcap": 0.0, "count": 0},
+        )
+        b["count"] += 1
+        for field, slot in (
+            ("change", "changes"),
+            ("Perf.1M", "perf_1m"),
+            ("Perf.YTD", "perf_ytd"),
+            ("RSI", "rsi"),
+        ):
+            v = r.get(field)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                b[slot].append(float(v))
+        mcap = r.get("market_cap_basic")
+        if isinstance(mcap, (int, float)):
+            b["mcap"] += float(mcap)
+
+    sectors: list[dict] = []
+    for sec, b in buckets.items():
+        sectors.append({
+            "sector": sec,
+            "count": b["count"],
+            "avg_change": _sect_avg(b["changes"]),
+            "avg_perf_1m": _sect_avg(b["perf_1m"]),
+            "avg_perf_ytd": _sect_avg(b["perf_ytd"]),
+            "avg_rsi": round(sum(b["rsi"]) / len(b["rsi"]), 1) if b["rsi"] else None,
+            "total_market_cap": round(b["mcap"], 0),
+            "momentum_score": None,
+        })
+
+    weights = [("avg_change", 0.5), ("avg_perf_1m", 0.3), ("avg_perf_ytd", 0.2)]
+    norm_maps = {key: _sect_norm(sectors, key) for key, _ in weights}
+
+    for s in sectors:
+        total_w, score = 0.0, 0.0
+        for key, w in weights:
+            nm = norm_maps[key]
+            if s["sector"] in nm:
+                score += w * nm[s["sector"]]
+                total_w += w
+        s["momentum_score"] = round(score / total_w, 4) if total_w > 0 else None
+
+    sectors.sort(key=lambda s: (s["momentum_score"] is None, -(s["momentum_score"] or 0.0)))
+    return sectors
+
+
+@mcp.tool
+def sector_rotation(
+    market: str = "america",
+    filters: list[dict] | None = None,
+    limit: int = 1000,
+) -> dict:
+    """Rank sectors by multi-timeframe momentum: a sector rotation dashboard.
+
+    Aggregates the screened universe by sector and computes per-sector:
+      avg_change:    average 1-day change % (short-term momentum)
+      avg_perf_1m:  average 1-month performance (medium momentum)
+      avg_perf_ytd: average YTD performance (longer-term trend)
+      avg_rsi:      average RSI (sentiment)
+      total_market_cap: total market cap of sampled stocks in the sector
+      momentum_score: weighted normalized blend (50% change, 30% 1M, 20% YTD)
+                       scaled 0-1 so sectors can be compared at a glance.
+
+    Sectors are returned sorted descending by momentum_score, so sector[0] has
+    the strongest momentum right now. Use this to decide which sectors to hunt in
+    before drilling into individual names with `screen` or `analyze`.
+
+    market:  one of list_markets() ids.
+    filters: optional extra filters (e.g. a market-cap floor).
+    limit:   stocks to sample (default 1000; spread across all sectors).
+
+    Returns {market, sampled, universe, sectors:[...]}.
+    """
+    req = ScreenRequest(
+        market=market,
+        filters=[Filter(**f) for f in (filters or [])],
+        columns=["name", "sector", "change", "Perf.1M", "Perf.YTD", "RSI", "market_cap_basic"],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+    sectors = _compute_sector_rotation(resp["rows"])
+    return {
+        "market": market,
+        "sampled": len(resp["rows"]),
+        "universe": resp["count"],
+        "sectors": sectors,
+    }
+
+
 @mcp.tool
 def top_movers(
     market: str = "america",
