@@ -1057,6 +1057,109 @@ def sector_rotation(
     }
 
 
+def _compute_new_highs_lows(rows: list[dict], threshold: float = 0.02) -> dict:
+    """Identify stocks at or near their 52-week highs and lows.
+
+    threshold: fractional tolerance for "near" the extreme.
+    0.02 = within 2% of the 52-week high/low counts as a new high/low.
+
+    Returns counts, ratio, difference, and the actual stock lists.
+    """
+    n = len(rows)
+    if not n:
+        return {"sample": 0, "new_highs": [], "new_lows": []}
+
+    new_highs: list[dict] = []
+    new_lows: list[dict] = []
+
+    for row in rows:
+        close = row.get("close")
+        high_52w = row.get("price_52_week_high")
+        low_52w = row.get("price_52_week_low")
+
+        if close is not None and high_52w is not None and high_52w > 0:
+            pct_from_high = (close - high_52w) / high_52w
+            if pct_from_high >= -threshold:
+                new_highs.append({
+                    "name": row.get("name"),
+                    "close": close,
+                    "high_52w": high_52w,
+                    "pct_from_high": round(pct_from_high * 100, 2),
+                    "change": row.get("change"),
+                    "sector": row.get("sector"),
+                })
+
+        if close is not None and low_52w is not None and low_52w > 0:
+            pct_from_low = (close - low_52w) / low_52w
+            if pct_from_low <= threshold:
+                new_lows.append({
+                    "name": row.get("name"),
+                    "close": close,
+                    "low_52w": low_52w,
+                    "pct_from_low": round(pct_from_low * 100, 2),
+                    "change": row.get("change"),
+                    "sector": row.get("sector"),
+                })
+
+    nh = len(new_highs)
+    nl = len(new_lows)
+    new_highs.sort(key=lambda x: x.get("pct_from_high") or 0, reverse=True)
+    new_lows.sort(key=lambda x: x.get("pct_from_low") or 0)
+
+    return {
+        "sample": n,
+        "new_highs_count": nh,
+        "new_lows_count": nl,
+        "nh_nl_ratio": round(nh / nl, 3) if nl else None,
+        "nh_nl_diff": nh - nl,
+        "pct_new_highs": round(nh / n * 100, 1),
+        "pct_new_lows": round(nl / n * 100, 1),
+        "new_highs": new_highs,
+        "new_lows": new_lows,
+    }
+
+
+@mcp.tool
+def new_highs_lows(
+    market: str = "america",
+    filters: list[dict] | None = None,
+    threshold: float = 0.02,
+    limit: int = 500,
+) -> dict:
+    """Stocks at or near their 52-week highs and lows: a classic breadth gauge.
+
+    The NH/NL ratio (new highs / new lows) and the NH-NL difference are leading
+    indicators of internal market health. A rising new-high count and a positive
+    NH-NL difference signal broad participation in an advance. A rising new-low
+    count signals deterioration under the surface even when indices hold up.
+
+    market:    one of list_markets() ids.
+    filters:   optional filters to scope the universe (e.g. a market-cap floor).
+    threshold: fractional distance from the 52w extreme to count as "at" the
+               level. Default 0.02 = within 2%. Use 0.05 for "near highs/lows".
+    limit:     rows to sample (default 500).
+
+    Returns {market, universe, sample, new_highs_count, new_lows_count,
+    nh_nl_ratio, nh_nl_diff, pct_new_highs, pct_new_lows,
+    new_highs:[{name,close,high_52w,pct_from_high,change,sector}],
+    new_lows:[{name,close,low_52w,pct_from_low,change,sector}]}.
+    """
+    req = ScreenRequest(
+        market=market,
+        filters=[Filter(**f) for f in (filters or [])],
+        columns=["name", "close", "change", "price_52_week_high", "price_52_week_low", "sector"],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+    result = _compute_new_highs_lows(resp["rows"], threshold=threshold)
+    result["universe"] = resp["count"]
+    result["market"] = market
+    return result
+
+
 @mcp.tool
 def top_movers(
     market: str = "america",
