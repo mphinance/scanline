@@ -31,6 +31,24 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-25** Added `new_highs_lows` MCP tool. Returns the count and
+  lists of stocks at or near their 52-week highs and lows for any market or
+  filtered slice. The core aggregation lives in a `_compute_new_highs_lows(rows,
+  threshold)` pure function: each row is classified as a new high (close within
+  `threshold` of `price_52_week_high`) or new low (close within `threshold` of
+  `price_52_week_low`), with default threshold 0.02 (2%). Outputs the NH count,
+  NL count, NH/NL ratio (None when no lows to avoid div-by-zero), NH-NL
+  difference, and percent of the sample at each extreme, plus the actual stock
+  lists sorted closest-to-extreme first. The NH-NL difference and ratio are
+  classic leading breadth indicators: a rising new-high count and positive diff
+  signal broad market participation; rising new lows signal deterioration under
+  the surface even when indices hold. Seven offline tests cover the basic
+  multi-stock case, empty rows, no highs or lows in range, threshold
+  sensitivity, missing 52-week fields, ratio-None when no lows, and
+  pct_from_high accuracy. Two live tests verify the tool returns valid data for
+  a broad scan and for a large-cap filtered slice. Wiring check added to the
+  tools registration test. PR #7, merged green.
+
 - **Nightly 2026-06-24** Added `sector_rotation` MCP tool. Aggregates a screened
   universe by sector and returns multi-timeframe momentum metrics: avg 1-day change,
   avg 1-month performance, avg YTD performance, avg RSI, total market cap, and a

@@ -15,6 +15,7 @@ from fastmcp import Client
 
 from backend.mcp_server import (
     _compute_breadth,
+    _compute_new_highs_lows,
     _compute_sector_rotation,
     mcp,
     normalize_interval,
@@ -61,6 +62,8 @@ def test_tools_and_resources_registered():
         "market_breadth",
         # Nightly 2026-06-24: sector rotation.
         "sector_rotation",
+        # Nightly 2026-06-25: new highs/lows breadth.
+        "new_highs_lows",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -463,3 +466,130 @@ def test_sector_rotation_with_filter_live():
     })
     assert "sectors" in out
     assert out["sampled"] > 0
+
+
+# --- new_highs_lows (offline math + live data) ---------------------------
+
+def test_new_highs_lows_is_registered():
+    tools, _, _ = _list()
+    assert "new_highs_lows" in tools
+
+
+def test_compute_new_highs_lows_basic():
+    rows = [
+        # At the 52w high exactly.
+        {"name": "A", "close": 100.0, "price_52_week_high": 100.0, "price_52_week_low": 50.0, "change": 2.0, "sector": "Tech"},
+        # Within 1% of the 52w high (counts as new high at default 2% threshold).
+        {"name": "B", "close": 99.0,  "price_52_week_high": 100.0, "price_52_week_low": 40.0, "change": 1.5, "sector": "Tech"},
+        # In the middle, neither high nor low.
+        {"name": "C", "close": 70.0,  "price_52_week_high": 100.0, "price_52_week_low": 50.0, "change": 0.5, "sector": "Energy"},
+        # At the 52w low exactly.
+        {"name": "D", "close": 50.0,  "price_52_week_high": 100.0, "price_52_week_low": 50.0, "change": -3.0, "sector": "Energy"},
+        # Within 1% of the 52w low (counts as new low at default 2% threshold).
+        {"name": "E", "close": 50.4,  "price_52_week_high": 90.0,  "price_52_week_low": 50.0, "change": -1.0, "sector": "Finance"},
+    ]
+    result = _compute_new_highs_lows(rows)
+    assert result["sample"] == 5
+    assert result["new_highs_count"] == 2   # A and B
+    assert result["new_lows_count"] == 2    # D and E
+    assert result["nh_nl_ratio"] == pytest.approx(1.0, abs=1e-3)
+    assert result["nh_nl_diff"] == 0
+    assert result["pct_new_highs"] == pytest.approx(40.0)
+    assert result["pct_new_lows"] == pytest.approx(40.0)
+    # Sorted: new highs have pct_from_high closest to 0 first (A=0.0, B=-1.0)
+    highs_names = [h["name"] for h in result["new_highs"]]
+    assert highs_names[0] == "A"
+    # Sorted: new lows have pct_from_low closest to 0 first (D=0.0, E=0.8)
+    lows_names = [l["name"] for l in result["new_lows"]]
+    assert lows_names[0] == "D"
+
+
+def test_compute_new_highs_lows_empty():
+    result = _compute_new_highs_lows([])
+    assert result["sample"] == 0
+    assert result["new_highs"] == []
+    assert result["new_lows"] == []
+
+
+def test_compute_new_highs_lows_no_new_highs_or_lows():
+    # All stocks are mid-range, well away from 52w extremes.
+    rows = [
+        {"name": "X", "close": 60.0, "price_52_week_high": 100.0, "price_52_week_low": 40.0},
+        {"name": "Y", "close": 70.0, "price_52_week_high": 100.0, "price_52_week_low": 40.0},
+    ]
+    result = _compute_new_highs_lows(rows)
+    assert result["new_highs_count"] == 0
+    assert result["new_lows_count"] == 0
+    assert result["nh_nl_ratio"] is None
+    assert result["nh_nl_diff"] == 0
+    assert result["pct_new_highs"] == pytest.approx(0.0)
+    assert result["pct_new_lows"] == pytest.approx(0.0)
+
+
+def test_compute_new_highs_lows_threshold():
+    # Stock is 3% below its 52w high. Default threshold (2%) excludes it;
+    # a threshold of 5% should include it.
+    rows = [{"name": "Z", "close": 97.0, "price_52_week_high": 100.0, "price_52_week_low": 50.0}]
+    tight = _compute_new_highs_lows(rows, threshold=0.02)
+    loose = _compute_new_highs_lows(rows, threshold=0.05)
+    assert tight["new_highs_count"] == 0
+    assert loose["new_highs_count"] == 1
+
+
+def test_compute_new_highs_lows_missing_52w_fields():
+    # Rows without price_52_week_high/low are silently skipped.
+    rows = [
+        {"name": "A", "close": 100.0},
+        {"name": "B", "close": 50.0, "price_52_week_high": None, "price_52_week_low": None},
+    ]
+    result = _compute_new_highs_lows(rows)
+    assert result["new_highs_count"] == 0
+    assert result["new_lows_count"] == 0
+    assert result["sample"] == 2
+
+
+def test_compute_new_highs_lows_no_lows_ratio_none():
+    # When there are no new lows the ratio is None to avoid division by zero.
+    rows = [
+        {"name": "A", "close": 100.0, "price_52_week_high": 100.0, "price_52_week_low": 30.0},
+        {"name": "B", "close": 70.0,  "price_52_week_high": 100.0, "price_52_week_low": 30.0},
+    ]
+    result = _compute_new_highs_lows(rows)
+    assert result["new_highs_count"] == 1
+    assert result["new_lows_count"] == 0
+    assert result["nh_nl_ratio"] is None
+    assert result["nh_nl_diff"] == 1
+
+
+def test_compute_new_highs_lows_pct_from_high_values():
+    # pct_from_high must be 0 when at the exact high, negative when below it.
+    rows = [{"name": "A", "close": 100.0, "price_52_week_high": 100.0, "price_52_week_low": 50.0}]
+    result = _compute_new_highs_lows(rows)
+    assert result["new_highs"][0]["pct_from_high"] == pytest.approx(0.0)
+
+
+@pytest.mark.live
+def test_new_highs_lows_live():
+    out = _call("new_highs_lows", {"market": "america", "limit": 300})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert out["sample"] <= 300
+    assert "new_highs_count" in out
+    assert "new_lows_count" in out
+    assert "nh_nl_diff" in out
+    assert isinstance(out["new_highs"], list)
+    assert isinstance(out["new_lows"], list)
+    # All returned new highs must have pct_from_high >= -2%.
+    for h in out["new_highs"]:
+        assert h["pct_from_high"] >= -2.01
+
+
+@pytest.mark.live
+def test_new_highs_lows_with_filter_live():
+    out = _call("new_highs_lows", {
+        "market": "america",
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e10}],
+        "limit": 200,
+    })
+    assert "new_highs_count" in out
+    assert out["sample"] > 0
