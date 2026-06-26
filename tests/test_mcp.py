@@ -17,6 +17,7 @@ from backend.mcp_server import (
     _compute_breadth,
     _compute_new_highs_lows,
     _compute_sector_rotation,
+    _compute_volume_leaders,
     mcp,
     normalize_interval,
     rating_label,
@@ -64,6 +65,8 @@ def test_tools_and_resources_registered():
         "sector_rotation",
         # Nightly 2026-06-25: new highs/lows breadth.
         "new_highs_lows",
+        # Nightly 2026-06-26: volume leaders.
+        "volume_leaders",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -593,3 +596,163 @@ def test_new_highs_lows_with_filter_live():
     })
     assert "new_highs_count" in out
     assert out["sample"] > 0
+
+
+# --- volume_leaders (offline math + live data) ---------------------------
+
+def test_volume_leaders_is_registered():
+    tools, _, _ = _list()
+    assert "volume_leaders" in tools
+
+
+def test_compute_volume_leaders_basic():
+    rows = [
+        # High rvol, up move.
+        {"name": "A", "close": 50.0, "change": 3.5, "rvol": None, "relative_volume_10d_calc": 4.2, "volume": 1_000_000, "sector": "Tech"},
+        # Medium rvol, down move.
+        {"name": "B", "close": 20.0, "change": -1.2, "relative_volume_10d_calc": 2.1, "volume": 500_000, "sector": "Energy"},
+        # Below threshold (1.0 < 1.5), should be excluded.
+        {"name": "C", "close": 30.0, "change": 0.5, "relative_volume_10d_calc": 1.0, "volume": 300_000, "sector": "Tech"},
+        # At threshold exactly, up.
+        {"name": "D", "close": 10.0, "change": 0.1, "relative_volume_10d_calc": 1.5, "volume": 200_000, "sector": "Finance"},
+    ]
+    result = _compute_volume_leaders(rows, min_rvol=1.5)
+    assert result["sample"] == 4
+    assert result["count"] == 3         # A, B, D qualify; C excluded
+    assert result["min_rvol"] == 1.5
+    names = [r["name"] for r in result["leaders"]]
+    assert "A" in names and "B" in names and "D" in names
+    assert "C" not in names
+    bd = result["by_direction"]
+    assert bd["up"] == 2    # A and D
+    assert bd["down"] == 1  # B
+    assert bd["flat"] == 0
+    assert bd["pct_up"] == pytest.approx(2 / 3 * 100, abs=0.2)
+    assert bd["pct_down"] == pytest.approx(1 / 3 * 100, abs=0.2)
+
+
+def test_compute_volume_leaders_sorted_by_rvol_desc():
+    rows = [
+        {"name": "Low",  "change": 1.0, "relative_volume_10d_calc": 2.0, "sector": "A"},
+        {"name": "High", "change": 1.0, "relative_volume_10d_calc": 5.0, "sector": "B"},
+        {"name": "Mid",  "change": 1.0, "relative_volume_10d_calc": 3.0, "sector": "C"},
+    ]
+    result = _compute_volume_leaders(rows, min_rvol=1.5)
+    rvols = [r["rvol"] for r in result["leaders"]]
+    assert rvols == sorted(rvols, reverse=True)
+    assert result["leaders"][0]["name"] == "High"
+
+
+def test_compute_volume_leaders_empty():
+    result = _compute_volume_leaders([])
+    assert result["sample"] == 0
+    assert result["count"] == 0
+    assert result["leaders"] == []
+    assert result["by_direction"] == {}
+    assert result["by_sector"] == []
+
+
+def test_compute_volume_leaders_none_below_threshold():
+    rows = [
+        {"name": "X", "change": 1.0, "relative_volume_10d_calc": 0.8, "sector": "Tech"},
+        {"name": "Y", "change": -1.0, "relative_volume_10d_calc": 1.2, "sector": "Energy"},
+    ]
+    result = _compute_volume_leaders(rows, min_rvol=2.0)
+    assert result["count"] == 0
+    assert result["leaders"] == []
+    bd = result["by_direction"]
+    assert bd["pct_up"] is None
+    assert bd["pct_down"] is None
+
+
+def test_compute_volume_leaders_missing_rvol_field():
+    # Rows without relative_volume_10d_calc are silently skipped.
+    rows = [
+        {"name": "A", "change": 2.0, "sector": "Tech"},
+        {"name": "B", "change": -1.0, "relative_volume_10d_calc": None, "sector": "Energy"},
+        {"name": "C", "change": 1.0, "relative_volume_10d_calc": 3.0, "sector": "Finance"},
+    ]
+    result = _compute_volume_leaders(rows, min_rvol=1.5)
+    assert result["sample"] == 3
+    assert result["count"] == 1
+    assert result["leaders"][0]["name"] == "C"
+
+
+def test_compute_volume_leaders_missing_change_is_flat():
+    # Rows without change are classified as flat, not dropped.
+    rows = [
+        {"name": "A", "relative_volume_10d_calc": 2.5, "sector": "Tech"},
+        {"name": "B", "relative_volume_10d_calc": 2.0, "change": None, "sector": "Energy"},
+    ]
+    result = _compute_volume_leaders(rows, min_rvol=1.5)
+    assert result["count"] == 2
+    assert all(r["direction"] == "flat" for r in result["leaders"])
+    assert result["by_direction"]["flat"] == 2
+    assert result["by_direction"]["up"] == 0
+    assert result["by_direction"]["down"] == 0
+
+
+def test_compute_volume_leaders_sector_breakdown():
+    rows = [
+        {"name": "A1", "change": 1.0, "relative_volume_10d_calc": 3.0, "sector": "Tech"},
+        {"name": "A2", "change": 2.0, "relative_volume_10d_calc": 2.5, "sector": "Tech"},
+        {"name": "B1", "change": -1.0, "relative_volume_10d_calc": 4.0, "sector": "Energy"},
+    ]
+    result = _compute_volume_leaders(rows, min_rvol=1.5)
+    by_sec = {s["sector"]: s for s in result["by_sector"]}
+    assert "Tech" in by_sec and "Energy" in by_sec
+    assert by_sec["Tech"]["count"] == 2
+    assert by_sec["Tech"]["up"] == 2
+    assert by_sec["Tech"]["down"] == 0
+    assert by_sec["Energy"]["count"] == 1
+    assert by_sec["Energy"]["down"] == 1
+    assert by_sec["Tech"]["avg_rvol"] == pytest.approx(2.75, abs=0.01)
+    # Sorted by count desc: Tech (2) before Energy (1).
+    assert result["by_sector"][0]["sector"] == "Tech"
+
+
+def test_compute_volume_leaders_no_sector_field():
+    # Rows without a sector land in "Unknown".
+    rows = [
+        {"name": "X", "change": 1.0, "relative_volume_10d_calc": 2.0},
+        {"name": "Y", "change": -1.0, "relative_volume_10d_calc": 3.0, "sector": None},
+    ]
+    result = _compute_volume_leaders(rows, min_rvol=1.5)
+    assert result["count"] == 2
+    by_sec = {s["sector"]: s for s in result["by_sector"]}
+    assert "Unknown" in by_sec
+    assert by_sec["Unknown"]["count"] == 2
+
+
+@pytest.mark.live
+def test_volume_leaders_live():
+    out = _call("volume_leaders", {"market": "america", "limit": 300, "min_rvol": 1.5})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert out["sample"] <= 300
+    assert "count" in out
+    assert "by_direction" in out
+    assert "by_sector" in out
+    assert isinstance(out["leaders"], list)
+    # Every leader must have rvol >= min_rvol.
+    for r in out["leaders"]:
+        assert r["rvol"] >= 1.5
+    # Leaders sorted rvol desc.
+    rvols = [r["rvol"] for r in out["leaders"]]
+    assert rvols == sorted(rvols, reverse=True)
+    # Direction values are the allowed set.
+    for r in out["leaders"]:
+        assert r["direction"] in {"up", "down", "flat"}
+
+
+@pytest.mark.live
+def test_volume_leaders_with_filter_live():
+    out = _call("volume_leaders", {
+        "market": "america",
+        "min_rvol": 2.0,
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e9}],
+        "limit": 200,
+        "top": 20,
+    })
+    assert "count" in out
+    assert len(out["leaders"]) <= 20

@@ -31,6 +31,24 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-26** Added `volume_leaders` MCP tool. Finds stocks trading
+  at or above a configurable relative-volume multiple (default 1.5x their 10-day
+  average), classifies each as up/down/flat to distinguish buying pressure from
+  selling pressure, and aggregates by sector to show where unusual activity is
+  concentrated. The core logic lives in a `_compute_volume_leaders(rows,
+  min_rvol)` pure function: rows without a numeric `relative_volume_10d_calc`
+  are silently skipped; rows without `change` are classified as flat; the
+  leaders list is sorted by rvol descending so the most unusual names lead. The
+  sector breakdown (sorted by count) answers "which sectors are seeing the most
+  volume spikes?" at a glance. The `by_direction` dict carries up/down/flat
+  counts and percentages; when no rows qualify, pct_up/pct_down are None rather
+  than dividing by zero. Nine offline tests cover the basic multi-stock case,
+  sort order, empty rows, no rows above threshold, missing rvol field (silently
+  skipped), missing change field (classified flat), sector breakdown accuracy,
+  sector None mapping to "Unknown", and the wiring check. Two live tests verify
+  the tool returns valid data for a broad scan and for a large-cap filtered
+  slice with a higher rvol threshold. PR #8, merged green.
+
 - **Nightly 2026-06-25** Added `new_highs_lows` MCP tool. Returns the count and
   lists of stocks at or near their 52-week highs and lows for any market or
   filtered slice. The core aggregation lives in a `_compute_new_highs_lows(rows,

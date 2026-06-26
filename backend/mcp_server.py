@@ -1160,6 +1160,134 @@ def new_highs_lows(
     return result
 
 
+def _compute_volume_leaders(rows: list[dict], min_rvol: float = 1.5) -> dict:
+    """Identify stocks with unusual volume and classify the activity direction.
+
+    Pure function over row data. Each row must carry relative_volume_10d_calc
+    and optionally change, close, volume, sector. Rows without a numeric rvol,
+    or with rvol below min_rvol, are excluded.
+
+    Returns sample, count (rows that qualified), by_direction breakdown
+    (up/down/flat counts and pct), by_sector aggregation sorted by count,
+    and the qualified leaders sorted descending by rvol.
+    """
+    n = len(rows)
+    if not n:
+        return {"sample": 0, "count": 0, "leaders": [], "by_direction": {}, "by_sector": []}
+
+    leaders: list[dict] = []
+    for row in rows:
+        rvol = row.get("relative_volume_10d_calc")
+        if not isinstance(rvol, (int, float)) or isinstance(rvol, bool):
+            continue
+        if rvol < min_rvol:
+            continue
+        change = row.get("change")
+        if isinstance(change, (int, float)) and not isinstance(change, bool):
+            direction = "up" if change > 0 else ("down" if change < 0 else "flat")
+        else:
+            direction = "flat"
+        leaders.append({
+            "name": row.get("name"),
+            "close": row.get("close"),
+            "change": change,
+            "rvol": round(float(rvol), 2),
+            "volume": row.get("volume"),
+            "sector": row.get("sector"),
+            "direction": direction,
+        })
+
+    leaders.sort(key=lambda x: -(x["rvol"] or 0))
+
+    total = len(leaders)
+    up = sum(1 for r in leaders if r["direction"] == "up")
+    down = sum(1 for r in leaders if r["direction"] == "down")
+    flat = total - up - down
+
+    by_direction = {
+        "up": up,
+        "down": down,
+        "flat": flat,
+        "pct_up": round(up / total * 100, 1) if total else None,
+        "pct_down": round(down / total * 100, 1) if total else None,
+    }
+
+    sector_buckets: dict[str, dict] = {}
+    for r in leaders:
+        sec = r.get("sector") or "Unknown"
+        b = sector_buckets.setdefault(sec, {"count": 0, "rvols": [], "up": 0, "down": 0})
+        b["count"] += 1
+        b["rvols"].append(r["rvol"])
+        if r["direction"] == "up":
+            b["up"] += 1
+        elif r["direction"] == "down":
+            b["down"] += 1
+
+    by_sector = sorted([
+        {
+            "sector": sec,
+            "count": b["count"],
+            "avg_rvol": round(sum(b["rvols"]) / len(b["rvols"]), 2) if b["rvols"] else None,
+            "up": b["up"],
+            "down": b["down"],
+        }
+        for sec, b in sector_buckets.items()
+    ], key=lambda s: -s["count"])
+
+    return {
+        "sample": n,
+        "count": total,
+        "min_rvol": min_rvol,
+        "by_direction": by_direction,
+        "by_sector": by_sector,
+        "leaders": leaders,
+    }
+
+
+@mcp.tool
+def volume_leaders(
+    market: str = "america",
+    min_rvol: float = 1.5,
+    filters: list[dict] | None = None,
+    limit: int = 500,
+    top: int = 50,
+) -> dict:
+    """Stocks with unusual volume right now, classified by price direction.
+
+    Finds every stock trading at or above min_rvol times its 10-day average
+    volume, then classifies each as up/down/flat. The direction breakdown reveals
+    whether the surge is buying pressure, selling pressure, or mixed. A sector
+    breakdown shows which sectors have concentrated unusual activity. The leaders
+    list is sorted by relative volume descending so the most unusual names lead.
+
+    market:   one of list_markets() ids (america, crypto, forex, ...).
+    min_rvol: minimum relative-volume multiple (default 1.5 = 50% above normal).
+              Use 2.0 for clear surges, 3.0 for extreme spikes.
+    filters:  optional extra filters (e.g. a market-cap floor).
+    limit:    rows to sample (default 500). Raise to 2000 for broader coverage.
+    top:      max leaders to return (default 50).
+
+    Returns {market, universe, sample, count, min_rvol, by_direction,
+    by_sector:[{sector,count,avg_rvol,up,down}],
+    leaders:[{name,close,change,rvol,volume,sector,direction}]}.
+    """
+    req = ScreenRequest(
+        market=market,
+        filters=[Filter(**f) for f in (filters or [])],
+        columns=["name", "close", "change", "volume", "relative_volume_10d_calc", "sector"],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+    result = _compute_volume_leaders(resp["rows"], min_rvol=min_rvol)
+    result["leaders"] = result["leaders"][:top]
+    result["universe"] = resp["count"]
+    result["market"] = market
+    return result
+
+
 @mcp.tool
 def top_movers(
     market: str = "america",
