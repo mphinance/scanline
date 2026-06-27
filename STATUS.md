@@ -31,6 +31,25 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-27** Added `momentum_consistency` MCP tool. Ranks stocks by
+  how consistently their returns align across five timeframes: 1d (daily change),
+  1W, 1M, 3M, and YTD performance. A stock up on the day may be noise; a stock
+  up across all five timeframes is a genuine momentum leader. Each timeframe
+  contributes a weight (1d 15%, 1W 20%, 1M 25%, 3M 20%, YTD 20%) when it aligns
+  with the requested direction ("bull" or "bear"), and the weights are
+  re-normalized over whichever timeframes have data, so the score always sits in
+  [0, 1] regardless of missing fields. The core logic lives in a
+  `_compute_momentum_consistency(rows, direction)` pure function. The tool accepts
+  a `min_aligned` parameter to filter for stocks where at least N timeframes must
+  agree, a `direction` parameter for finding laggards as well as leaders, and the
+  standard `filters`/`limit`/`top` controls. Nine offline tests cover the basic
+  multi-stock sorting case, empty rows, bear direction, missing performance fields
+  (graceful re-normalization), rows with no data at all (score None, sorted last),
+  descending sort order, score-bounds invariant ([0,1] for every direction),
+  the flat-return edge case (zero not counted as bull or bear), and the wiring
+  check. Two live tests verify the tool returns valid data for a broad scan and
+  for a bear-direction large-cap filtered slice. PR #9, merged green.
+
 - **Nightly 2026-06-26** Added `volume_leaders` MCP tool. Finds stocks trading
   at or above a configurable relative-volume multiple (default 1.5x their 10-day
   average), classifies each as up/down/flat to distinguish buying pressure from
