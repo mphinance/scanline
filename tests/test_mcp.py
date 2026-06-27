@@ -15,6 +15,7 @@ from fastmcp import Client
 
 from backend.mcp_server import (
     _compute_breadth,
+    _compute_momentum_consistency,
     _compute_new_highs_lows,
     _compute_sector_rotation,
     _compute_volume_leaders,
@@ -67,6 +68,8 @@ def test_tools_and_resources_registered():
         "new_highs_lows",
         # Nightly 2026-06-26: volume leaders.
         "volume_leaders",
+        # Nightly 2026-06-27: momentum consistency.
+        "momentum_consistency",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -756,3 +759,173 @@ def test_volume_leaders_with_filter_live():
     })
     assert "count" in out
     assert len(out["leaders"]) <= 20
+
+
+# --- momentum_consistency (offline math + live data) -------------------------
+
+def test_momentum_consistency_is_registered():
+    tools, _, _ = _list()
+    assert "momentum_consistency" in tools
+
+
+def test_compute_momentum_consistency_basic():
+    rows = [
+        # Strong bull: all 5 timeframes positive.
+        {"name": "A", "close": 100, "change": 2.0, "sector": "Tech",
+         "Perf.W": 3.0, "Perf.1M": 8.0, "Perf.3M": 15.0, "Perf.YTD": 30.0,
+         "market_cap_basic": 1e12},
+        # Mixed: 3 of 5 positive (1d, 1W, 1M positive; 3M, YTD negative).
+        {"name": "B", "close": 50, "change": 1.0, "sector": "Energy",
+         "Perf.W": 1.5, "Perf.1M": 2.0, "Perf.3M": -3.0, "Perf.YTD": -5.0,
+         "market_cap_basic": 5e10},
+        # Weak bull: only 1d positive, rest negative.
+        {"name": "C", "close": 30, "change": 0.5, "sector": "Finance",
+         "Perf.W": -1.0, "Perf.1M": -2.0, "Perf.3M": -5.0, "Perf.YTD": -8.0,
+         "market_cap_basic": 2e10},
+    ]
+    result = _compute_momentum_consistency(rows, direction="bull")
+    names = [r["name"] for r in result]
+    # A should lead (score 1.0), then B (3 of 5 aligned), then C (1 of 5).
+    assert names[0] == "A"
+    assert names[-1] == "C"
+    # A has consistency_score == 1.0 (all timeframes aligned).
+    assert result[0]["consistency_score"] == pytest.approx(1.0)
+    # Score is in [0, 1] for all rows.
+    for r in result:
+        assert 0.0 <= r["consistency_score"] <= 1.0
+    # A has all 5 timeframes aligned.
+    assert result[0]["timeframes_aligned"] == 5
+    assert result[0]["positive_tf"] == ["1d", "1W", "1M", "3M", "YTD"]
+    assert result[0]["negative_tf"] == []
+
+
+def test_compute_momentum_consistency_empty():
+    result = _compute_momentum_consistency([])
+    assert result == []
+
+
+def test_compute_momentum_consistency_bear_direction():
+    rows = [
+        # Bear: all 5 negative.
+        {"name": "X", "close": 10, "change": -3.0, "sector": "Tech",
+         "Perf.W": -4.0, "Perf.1M": -8.0, "Perf.3M": -12.0, "Perf.YTD": -20.0},
+        # Only 1d negative.
+        {"name": "Y", "close": 20, "change": -0.5, "sector": "Energy",
+         "Perf.W": 1.0, "Perf.1M": 3.0, "Perf.3M": 5.0, "Perf.YTD": 10.0},
+    ]
+    result = _compute_momentum_consistency(rows, direction="bear")
+    # X (all 5 negative) should score 1.0 and lead.
+    assert result[0]["name"] == "X"
+    assert result[0]["consistency_score"] == pytest.approx(1.0)
+    assert result[0]["timeframes_aligned"] == 5
+    # Y has only 1d negative.
+    y = next(r for r in result if r["name"] == "Y")
+    assert y["timeframes_aligned"] == 1
+    # Y's score = 0.15 (only the 1d weight).
+    assert y["consistency_score"] == pytest.approx(0.15, abs=1e-4)
+
+
+def test_compute_momentum_consistency_missing_fields():
+    # Rows missing some perf fields: weights are re-normalized over available data.
+    rows = [
+        # Only 1d and 1W present, both positive.
+        {"name": "A", "close": 50, "change": 1.0, "Perf.W": 2.0},
+        # Only 1d present, positive.
+        {"name": "B", "close": 30, "change": 0.5},
+    ]
+    result = _compute_momentum_consistency(rows, direction="bull")
+    a = next(r for r in result if r["name"] == "A")
+    b = next(r for r in result if r["name"] == "B")
+    # A: 1d (0.15) + 1W (0.20) both aligned, total available = 0.35 -> score = 1.0.
+    assert a["consistency_score"] == pytest.approx(1.0)
+    assert a["timeframes_total"] == 2
+    # B: only 1d available and aligned -> score = 1.0 (1 aligned / 1 available).
+    assert b["consistency_score"] == pytest.approx(1.0)
+    assert b["timeframes_total"] == 1
+
+
+def test_compute_momentum_consistency_no_data():
+    # A row with no performance data at all gets score None.
+    rows = [
+        {"name": "Z", "close": 10},
+        {"name": "A", "close": 20, "change": 1.0},
+    ]
+    result = _compute_momentum_consistency(rows, direction="bull")
+    # Both lack full data, but "A" has 1d (change). "Z" has none at all.
+    z = next(r for r in result if r["name"] == "Z")
+    assert z["consistency_score"] is None
+    # None-score rows sort to the end.
+    assert result[-1]["name"] == "Z"
+
+
+def test_compute_momentum_consistency_sorted_desc():
+    rows = [
+        {"name": "Lo",  "change": -1.0, "Perf.W": -2.0, "Perf.1M": -3.0, "Perf.3M": -4.0, "Perf.YTD": -5.0},
+        {"name": "Hi",  "change":  2.0, "Perf.W":  3.0, "Perf.1M":  4.0, "Perf.3M":  5.0, "Perf.YTD":  6.0},
+        {"name": "Mid", "change":  1.0, "Perf.W":  1.5, "Perf.1M": -1.0, "Perf.3M": -2.0, "Perf.YTD": -3.0},
+    ]
+    result = _compute_momentum_consistency(rows, direction="bull")
+    scores = [r["consistency_score"] for r in result if r["consistency_score"] is not None]
+    assert scores == sorted(scores, reverse=True)
+    assert result[0]["name"] == "Hi"
+
+
+def test_compute_momentum_consistency_score_bounds():
+    # consistency_score must always be in [0, 1].
+    rows = [
+        {"name": str(i), "change": v, "Perf.W": v, "Perf.1M": v, "Perf.3M": v, "Perf.YTD": v}
+        for i, v in enumerate([-10.0, -1.0, 0.0, 1.0, 10.0])
+    ]
+    for direction in ("bull", "bear"):
+        result = _compute_momentum_consistency(rows, direction=direction)
+        for r in result:
+            if r["consistency_score"] is not None:
+                assert 0.0 <= r["consistency_score"] <= 1.0
+
+
+def test_compute_momentum_consistency_zero_change_not_aligned():
+    # Exactly zero (flat) should not count as bull or bear aligned.
+    rows = [{"name": "Flat", "change": 0.0, "Perf.W": 0.0, "Perf.1M": 0.0,
+             "Perf.3M": 0.0, "Perf.YTD": 0.0}]
+    bull = _compute_momentum_consistency(rows, direction="bull")
+    bear = _compute_momentum_consistency(rows, direction="bear")
+    assert bull[0]["consistency_score"] == pytest.approx(0.0)
+    assert bear[0]["consistency_score"] == pytest.approx(0.0)
+    assert bull[0]["timeframes_aligned"] == 0
+    assert bear[0]["timeframes_aligned"] == 0
+
+
+@pytest.mark.live
+def test_momentum_consistency_live():
+    out = _call("momentum_consistency", {"market": "america", "limit": 200, "top": 20})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert out["sample"] <= 200
+    assert out["direction"] == "bull"
+    top = out["top"]
+    assert isinstance(top, list)
+    assert len(top) <= 20
+    # Scores are in [0, 1] and sorted descending.
+    scores = [r["consistency_score"] for r in top if r["consistency_score"] is not None]
+    for s in scores:
+        assert 0.0 <= s <= 1.0
+    assert scores == sorted(scores, reverse=True)
+    # Each row has the required keys.
+    for r in top:
+        assert "name" in r
+        assert "consistency_score" in r
+        assert "timeframes_aligned" in r
+        assert "positive_tf" in r
+
+
+@pytest.mark.live
+def test_momentum_consistency_bear_live():
+    out = _call("momentum_consistency", {
+        "market": "america",
+        "direction": "bear",
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e9}],
+        "limit": 200,
+        "top": 10,
+    })
+    assert out["direction"] == "bear"
+    assert len(out["top"]) <= 10

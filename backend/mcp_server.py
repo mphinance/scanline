@@ -1351,6 +1351,138 @@ def top_movers(
     }
 
 
+# Five timeframes checked for momentum consistency.
+# Weights sum to 1.0; the 1-day reading is down-weighted as daily noise.
+_MC_TIMEFRAMES = [
+    ("1d",  "change",   0.15),
+    ("1W",  "Perf.W",   0.20),
+    ("1M",  "Perf.1M",  0.25),
+    ("3M",  "Perf.3M",  0.20),
+    ("YTD", "Perf.YTD", 0.20),
+]
+
+
+def _compute_momentum_consistency(rows: list[dict], direction: str = "bull") -> list[dict]:
+    """Score each row by how consistently its returns align with `direction`.
+
+    direction: "bull" scores positive timeframes; "bear" scores negative ones.
+
+    Each of the five timeframes (1d, 1W, 1M, 3M, YTD) contributes its weight
+    (15/20/25/20/20%) when the return aligns with the direction. Timeframes
+    without data are skipped and the remaining weights are re-normalized, so
+    the score is always in [0, 1] regardless of how many fields are present.
+    A score of 1.0 means every available timeframe aligns; 0.0 means none do.
+
+    Rows with no timeframe data at all get score None and sort to the end.
+    Returns the list sorted descending by consistency_score.
+    """
+    results: list[dict] = []
+    for row in rows:
+        pos_tfs: list[str] = []
+        neg_tfs: list[str] = []
+        total_w = 0.0
+        aligned_w = 0.0
+        for label, field, weight in _MC_TIMEFRAMES:
+            v = row.get(field)
+            if not isinstance(v, (int, float)) or isinstance(v, bool):
+                continue
+            total_w += weight
+            if v > 0:
+                pos_tfs.append(label)
+                if direction == "bull":
+                    aligned_w += weight
+            elif v < 0:
+                neg_tfs.append(label)
+                if direction == "bear":
+                    aligned_w += weight
+
+        score = round(aligned_w / total_w, 4) if total_w > 0 else None
+        aligned_count = len(pos_tfs) if direction == "bull" else len(neg_tfs)
+        results.append({
+            "name": row.get("name"),
+            "close": row.get("close"),
+            "change": row.get("change"),
+            "sector": row.get("sector"),
+            "market_cap_basic": row.get("market_cap_basic"),
+            "consistency_score": score,
+            "timeframes_aligned": aligned_count,
+            "timeframes_total": len(pos_tfs) + len(neg_tfs),
+            "positive_tf": pos_tfs,
+            "negative_tf": neg_tfs,
+            "perf_1w": row.get("Perf.W"),
+            "perf_1m": row.get("Perf.1M"),
+            "perf_3m": row.get("Perf.3M"),
+            "perf_ytd": row.get("Perf.YTD"),
+        })
+
+    results.sort(key=lambda x: (x["consistency_score"] is None, -(x["consistency_score"] or 0.0)))
+    return results
+
+
+@mcp.tool
+def momentum_consistency(
+    market: str = "america",
+    direction: str = "bull",
+    min_aligned: int = 0,
+    filters: list[dict] | None = None,
+    limit: int = 500,
+    top: int = 50,
+) -> dict:
+    """Rank stocks by how consistently their returns align across five time frames.
+
+    A stock up on the day might be noise. A stock up on the day, the week, the
+    month, the quarter, AND year-to-date is a genuine momentum leader. This tool
+    computes a consistency_score in [0, 1] for every stock: 1.0 means all five
+    timeframes (1d, 1W, 1M, 3M, YTD) align; 0.0 means none do.
+
+    The timeframes are weighted (1d 15%, 1W 20%, 1M 25%, 3M 20%, YTD 20%) so
+    longer-duration alignment contributes more to the score. Timeframes without
+    data are skipped and weights are re-normalized, so the score stays in [0,1].
+
+    Use direction="bear" to find consistent downtrends (laggards, short ideas).
+    Use min_aligned to filter for a minimum number of timeframes aligning.
+
+    market:     one of list_markets() ids.
+    direction:  "bull" (positive returns dominate) or "bear" (negative).
+    min_aligned: minimum number of timeframes that must align (0 = no filter).
+    filters:    optional extra filters (e.g. a market-cap floor).
+    limit:      rows to sample (default 500; more = better coverage).
+    top:        max stocks to return (default 50).
+
+    Returns {market, universe, sample, direction, top:[{name, close, change,
+    sector, market_cap_basic, consistency_score, timeframes_aligned,
+    timeframes_total, positive_tf, negative_tf, perf_1w, perf_1m,
+    perf_3m, perf_ytd}]}.
+    """
+    req = ScreenRequest(
+        market=market,
+        filters=[Filter(**f) for f in (filters or [])],
+        columns=[
+            "name", "close", "change", "sector", "market_cap_basic",
+            "Perf.W", "Perf.1M", "Perf.3M", "Perf.YTD",
+        ],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+
+    scored = _compute_momentum_consistency(resp["rows"], direction=direction)
+
+    if min_aligned > 0:
+        scored = [s for s in scored if s["timeframes_aligned"] >= min_aligned]
+
+    top_rows = scored[:max(1, top)]
+    return {
+        "market": market,
+        "universe": resp["count"],
+        "sample": len(resp["rows"]),
+        "direction": direction,
+        "top": top_rows,
+    }
+
+
 # ----------------------------------------------------------------------------
 # Prompts: canned, modern screening workflows the model can launch
 # ----------------------------------------------------------------------------
