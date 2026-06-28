@@ -1483,6 +1483,168 @@ def momentum_consistency(
     }
 
 
+# Timeframe config for the relative-strength calculation.
+# label -> TradingView field name
+_RS_FIELDS = [
+    ("1d",  "change",   0.5),
+    ("1M",  "Perf.1M",  0.3),
+    ("YTD", "Perf.YTD", 0.2),
+]
+
+
+def _compute_relative_strength(rows: list[dict]) -> list[dict]:
+    """Score each row by its excess return vs its sector average.
+
+    For three timeframes (1d, 1M, YTD), compute the per-sector mean return,
+    then each row's excess = row_value - sector_mean. The composite raw score
+    is a weighted sum of excess returns (50% 1d, 30% 1M, 20% YTD) re-normalized
+    over whichever timeframes have data for that row. The final rs_score is the
+    percentile rank (0-100) of the raw composite across all rows in the pull.
+
+    A score of 99 means the stock is in the top 1% of its sector-relative excess
+    return in the screened universe. A score of 1 means it is in the bottom 1%.
+    Rows with no numeric data at all get rs_score None and sort to the end.
+    Returns the list sorted descending by rs_score.
+    """
+    if not rows:
+        return []
+
+    # Build per-sector value buckets for each timeframe.
+    sec_buckets: dict[str, dict[str, list[float]]] = {}
+    for row in rows:
+        sec = row.get("sector") or "Unknown"
+        if sec not in sec_buckets:
+            sec_buckets[sec] = {label: [] for label, _, _ in _RS_FIELDS}
+        for label, field, _ in _RS_FIELDS:
+            v = row.get(field)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                sec_buckets[sec][label].append(float(v))
+
+    # Compute sector averages.
+    sec_avgs: dict[str, dict[str, float | None]] = {}
+    for sec, buckets in sec_buckets.items():
+        sec_avgs[sec] = {}
+        for label, _, _ in _RS_FIELDS:
+            vals = buckets[label]
+            sec_avgs[sec][label] = sum(vals) / len(vals) if vals else None
+
+    # Compute per-row excess returns and raw weighted score.
+    raw_scores: list[float | None] = []
+    results: list[dict] = []
+    for row in rows:
+        sec = row.get("sector") or "Unknown"
+        avgs = sec_avgs.get(sec, {})
+
+        excess: dict[str, float | None] = {}
+        weighted_sum = 0.0
+        total_w = 0.0
+
+        for label, field, weight in _RS_FIELDS:
+            v = row.get(field)
+            sec_avg = avgs.get(label)
+            if (
+                isinstance(v, (int, float)) and not isinstance(v, bool)
+                and sec_avg is not None
+            ):
+                exc = float(v) - sec_avg
+                excess[label] = round(exc, 4)
+                weighted_sum += weight * exc
+                total_w += weight
+            else:
+                excess[label] = None
+
+        raw = (weighted_sum / total_w) if total_w > 0 else None
+        raw_scores.append(raw)
+
+        results.append({
+            "name": row.get("name"),
+            "close": row.get("close"),
+            "change": row.get("change"),
+            "sector": sec,
+            "market_cap_basic": row.get("market_cap_basic"),
+            "rs_score": None,
+            "excess_1d": excess.get("1d"),
+            "excess_1m": excess.get("1M"),
+            "excess_ytd": excess.get("YTD"),
+            "sector_avg_change": avgs.get("1d"),
+            "perf_1m": row.get("Perf.1M"),
+            "perf_ytd": row.get("Perf.YTD"),
+        })
+
+    # Compute percentile rank of the raw composite (0-100).
+    present = [v for v in raw_scores if v is not None]
+    n_present = len(present)
+
+    for res, raw in zip(results, raw_scores):
+        if raw is None or n_present == 0:
+            res["rs_score"] = None
+        else:
+            below = sum(1 for x in present if x < raw)
+            equal = sum(1 for x in present if x == raw)
+            res["rs_score"] = round((below + 0.5 * equal) / n_present * 100.0, 1)
+
+    results.sort(key=lambda x: (x["rs_score"] is None, -(x["rs_score"] or 0.0)))
+    return results
+
+
+@mcp.tool
+def relative_strength_leaders(
+    market: str = "america",
+    filters: list[dict] | None = None,
+    limit: int = 500,
+    top: int = 50,
+) -> dict:
+    """Find stocks outperforming their sector peers: sector-relative strength leaders.
+
+    Raw change% ranks every stock together across the entire market. This tool
+    re-ranks by sector-relative excess return: how much is each stock beating
+    (or lagging) its own sector's average? A stock up 3% in a sector down 2% is
+    outperforming by 5 points and surfaces near the top. A stock up 1% in a sector
+    up 4% is actually lagging and scores lower.
+
+    The composite rs_score (0-100, percentile rank) weights excess returns across
+    three timeframes: 50% 1-day, 30% 1-month, 20% YTD. This finds stocks with
+    sustained leadership within their sector, not just today's noise.
+
+    Use this to:
+    - Find sector leaders before they show up on the raw gainers list.
+    - Identify stocks holding up best during sector-wide drawdowns.
+    - Cross-reference with `sector_rotation` to double down on the hot sector's
+      strongest names.
+
+    market:  one of list_markets() ids.
+    filters: optional extra filters (e.g. a market-cap floor).
+    limit:   rows to sample (default 500; more coverage = more reliable sector avgs).
+    top:     max stocks to return (default 50).
+
+    Returns {market, universe, sample, top:[{name, close, change, sector,
+    market_cap_basic, rs_score, excess_1d, excess_1m, excess_ytd,
+    sector_avg_change, perf_1m, perf_ytd}]}.
+    """
+    req = ScreenRequest(
+        market=market,
+        filters=[Filter(**f) for f in (filters or [])],
+        columns=[
+            "name", "close", "change", "sector", "market_cap_basic",
+            "Perf.1M", "Perf.YTD",
+        ],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+
+    scored = _compute_relative_strength(resp["rows"])
+    top_rows = scored[:max(1, top)]
+    return {
+        "market": market,
+        "universe": resp["count"],
+        "sample": len(resp["rows"]),
+        "top": top_rows,
+    }
+
+
 # ----------------------------------------------------------------------------
 # Prompts: canned, modern screening workflows the model can launch
 # ----------------------------------------------------------------------------

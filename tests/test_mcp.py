@@ -17,6 +17,7 @@ from backend.mcp_server import (
     _compute_breadth,
     _compute_momentum_consistency,
     _compute_new_highs_lows,
+    _compute_relative_strength,
     _compute_sector_rotation,
     _compute_volume_leaders,
     mcp,
@@ -70,6 +71,8 @@ def test_tools_and_resources_registered():
         "volume_leaders",
         # Nightly 2026-06-27: momentum consistency.
         "momentum_consistency",
+        # Nightly 2026-06-28: sector-relative strength leaders.
+        "relative_strength_leaders",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -928,4 +931,203 @@ def test_momentum_consistency_bear_live():
         "top": 10,
     })
     assert out["direction"] == "bear"
+    assert len(out["top"]) <= 10
+
+
+# --- relative_strength_leaders (offline math + live data) -----------------
+
+def test_relative_strength_leaders_is_registered():
+    tools, _, _ = _list()
+    assert "relative_strength_leaders" in tools
+
+
+def test_compute_relative_strength_basic():
+    # Tech sector average change = 1.0 ((3 + -1) / 2).
+    # Energy sector average change = -2.0 (single stock).
+    # Expected: TechHero (excess_1d = 3-1=+2) leads, TechLaggard (excess_1d=-1-1=-2) trails.
+    rows = [
+        {
+            "name": "TechHero",   "close": 100, "change": 3.0,
+            "sector": "Tech",     "market_cap_basic": 1e12,
+            "Perf.1M": 10.0,      "Perf.YTD": 30.0,
+        },
+        {
+            "name": "TechLaggard","close": 50,  "change": -1.0,
+            "sector": "Tech",     "market_cap_basic": 5e10,
+            "Perf.1M": -2.0,      "Perf.YTD": -5.0,
+        },
+        {
+            "name": "EnergyName", "close": 30,  "change": -2.0,
+            "sector": "Energy",   "market_cap_basic": 2e11,
+            "Perf.1M": -3.0,      "Perf.YTD": -8.0,
+        },
+    ]
+    result = _compute_relative_strength(rows)
+
+    assert len(result) == 3
+    by_name = {r["name"]: r for r in result}
+
+    # TechHero: sector Tech avg change=1.0, excess_1d = 3.0 - 1.0 = 2.0.
+    assert by_name["TechHero"]["excess_1d"] == pytest.approx(2.0)
+    assert by_name["TechLaggard"]["excess_1d"] == pytest.approx(-2.0)
+    # EnergyName is the only stock in Energy, excess_1d = -2.0 - (-2.0) = 0.0.
+    assert by_name["EnergyName"]["excess_1d"] == pytest.approx(0.0)
+
+    # TechHero should lead (highest composite excess).
+    assert result[0]["name"] == "TechHero"
+
+    # rs_score in [0, 100] for all rows.
+    for r in result:
+        if r["rs_score"] is not None:
+            assert 0.0 <= r["rs_score"] <= 100.0
+
+
+def test_compute_relative_strength_empty():
+    result = _compute_relative_strength([])
+    assert result == []
+
+
+def test_compute_relative_strength_sector_avg_accuracy():
+    # Two stocks in the same sector. Each stock's sector_avg_change = (5+1)/2 = 3.0.
+    rows = [
+        {"name": "A", "close": 10, "change": 5.0, "sector": "X", "Perf.1M": 10.0, "Perf.YTD": 20.0},
+        {"name": "B", "close": 20, "change": 1.0, "sector": "X", "Perf.1M": 2.0,  "Perf.YTD": 5.0},
+    ]
+    result = _compute_relative_strength(rows)
+    by_name = {r["name"]: r for r in result}
+
+    # sector_avg_change should be (5+1)/2 = 3.0 for both.
+    assert by_name["A"]["sector_avg_change"] == pytest.approx(3.0)
+    assert by_name["B"]["sector_avg_change"] == pytest.approx(3.0)
+
+    # A excess_1d = 5 - 3 = 2.0; B excess_1d = 1 - 3 = -2.0.
+    assert by_name["A"]["excess_1d"] == pytest.approx(2.0)
+    assert by_name["B"]["excess_1d"] == pytest.approx(-2.0)
+
+    # A should score higher than B.
+    assert by_name["A"]["rs_score"] > by_name["B"]["rs_score"]
+
+
+def test_compute_relative_strength_single_stock_per_sector():
+    # When a stock is the only one in its sector, sector_avg = its own value,
+    # so every excess is 0.0 and rs_score lands in the middle (50).
+    rows = [
+        {"name": "Solo", "close": 100, "change": 5.0, "sector": "Unique",
+         "Perf.1M": 10.0, "Perf.YTD": 20.0},
+    ]
+    result = _compute_relative_strength(rows)
+    assert len(result) == 1
+    r = result[0]
+    assert r["excess_1d"] == pytest.approx(0.0)
+    assert r["excess_1m"] == pytest.approx(0.0)
+    assert r["excess_ytd"] == pytest.approx(0.0)
+    # Percentile rank of the single value against itself = 50.
+    assert r["rs_score"] == pytest.approx(50.0)
+
+
+def test_compute_relative_strength_missing_change_field():
+    # Rows without change: excess_1d is None; the 1M and YTD timeframes still score.
+    rows = [
+        {"name": "NoChange",  "close": 10, "sector": "Tech",
+         "Perf.1M": 5.0, "Perf.YTD": 15.0},
+        {"name": "HasChange", "close": 20, "change": 2.0, "sector": "Tech",
+         "Perf.1M": 3.0, "Perf.YTD": 10.0},
+    ]
+    result = _compute_relative_strength(rows)
+    by_name = {r["name"]: r for r in result}
+
+    # excess_1d should be None because change is missing.
+    assert by_name["NoChange"]["excess_1d"] is None
+    # rs_score should still be computed (from 1M and YTD excess).
+    assert by_name["NoChange"]["rs_score"] is not None
+
+
+def test_compute_relative_strength_no_data_at_all():
+    # A row with no numeric fields at all gets rs_score None and sorts last.
+    rows = [
+        {"name": "Ghost", "close": None, "sector": "X"},
+        {"name": "Normal", "close": 10, "change": 2.0, "sector": "X", "Perf.1M": 4.0},
+    ]
+    result = _compute_relative_strength(rows)
+    by_name = {r["name"]: r for r in result}
+
+    assert by_name["Ghost"]["rs_score"] is None
+    # None-score row sorts to the end.
+    assert result[-1]["name"] == "Ghost"
+
+
+def test_compute_relative_strength_score_bounds():
+    # rs_score must always be in [0, 100] regardless of the data shape.
+    rows = [
+        {"name": str(i), "close": 10, "change": float(v),
+         "sector": "X", "Perf.1M": float(v) * 2, "Perf.YTD": float(v) * 3}
+        for i, v in enumerate([-20, -5, 0, 5, 20])
+    ]
+    result = _compute_relative_strength(rows)
+    for r in result:
+        if r["rs_score"] is not None:
+            assert 0.0 <= r["rs_score"] <= 100.0
+
+
+def test_compute_relative_strength_sorted_desc():
+    # Result must be sorted descending by rs_score (None last).
+    rows = [
+        {"name": "A", "close": 10, "change": 5.0, "sector": "S", "Perf.1M": 10.0, "Perf.YTD": 20.0},
+        {"name": "B", "close": 10, "change": 2.0, "sector": "S", "Perf.1M": 4.0,  "Perf.YTD": 8.0},
+        {"name": "C", "close": 10, "change": -3.0,"sector": "S", "Perf.1M": -5.0, "Perf.YTD": -10.0},
+        {"name": "D", "close": None, "sector": "S"},  # no data, should sort last
+    ]
+    result = _compute_relative_strength(rows)
+    scores = [r["rs_score"] for r in result]
+    non_null = [s for s in scores if s is not None]
+    assert non_null == sorted(non_null, reverse=True)
+    assert result[-1]["name"] == "D"
+
+
+def test_compute_relative_strength_unknown_sector():
+    # Rows without a sector field land in "Unknown" and are treated as one group.
+    rows = [
+        {"name": "X", "close": 10, "change": 3.0, "Perf.1M": 6.0, "Perf.YTD": 12.0},
+        {"name": "Y", "close": 20, "change": -1.0, "sector": None, "Perf.1M": -2.0},
+    ]
+    result = _compute_relative_strength(rows)
+    sectors = {r["sector"] for r in result}
+    assert sectors == {"Unknown"}
+    # Both rows scored (same "Unknown" sector, one outperforms the other).
+    assert all(r["rs_score"] is not None for r in result)
+
+
+@pytest.mark.live
+def test_relative_strength_leaders_live():
+    out = _call("relative_strength_leaders", {"market": "america", "limit": 300, "top": 20})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert out["sample"] <= 300
+    top = out["top"]
+    assert isinstance(top, list)
+    assert len(top) <= 20
+    # rs_score in [0, 100] and sorted descending.
+    scores = [r["rs_score"] for r in top if r["rs_score"] is not None]
+    for s in scores:
+        assert 0.0 <= s <= 100.0
+    assert scores == sorted(scores, reverse=True)
+    # Each row has required keys.
+    for r in top:
+        assert "name" in r
+        assert "rs_score" in r
+        assert "excess_1d" in r
+        assert "sector" in r
+        assert "sector_avg_change" in r
+
+
+@pytest.mark.live
+def test_relative_strength_leaders_with_filter_live():
+    out = _call("relative_strength_leaders", {
+        "market": "america",
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e9}],
+        "limit": 200,
+        "top": 10,
+    })
+    assert "top" in out
+    assert out["sample"] > 0
     assert len(out["top"]) <= 10

@@ -31,6 +31,28 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-28** Added `relative_strength_leaders` MCP tool. Ranks stocks
+  by how much they are outperforming (or lagging) their own sector's average
+  rather than the raw market-wide change. The core logic lives in a pure
+  `_compute_relative_strength(rows)` function: for each stock the sector average
+  is computed across three timeframes (1d: 50%, 1M: 30%, YTD: 20%), then the
+  per-row excess return is the weighted deviation from that sector mean. The
+  final `rs_score` is the percentile rank (0-100) of the composite excess across
+  all rows in the pull. A stock at 99 is beating every sector peer on a
+  multi-timeframe basis; a stock at 1 is the biggest sector laggard. Scores from
+  a single-stock sector land at 50 by construction (zero excess vs itself). The
+  tool accepts the standard `filters` and `limit` controls plus a `top` cap, and
+  returns `{market, universe, sample, top:[{name, close, change, sector,
+  market_cap_basic, rs_score, excess_1d, excess_1m, excess_ytd,
+  sector_avg_change, perf_1m, perf_ytd}]}`. Eight offline tests cover: the basic
+  multi-sector outperformance case, empty rows, sector-average accuracy, the
+  single-stock-per-sector edge case (score = 50.0), missing change field
+  (graceful fallback to 1M/YTD excess), no-data-at-all row (rs_score None, sorts
+  last), score-bounds invariant (0-100 for any data), descending sort order with
+  None trailing, and rows without a sector field (bucketed as "Unknown"). Two live
+  tests verify the tool returns valid scored data for a broad scan and for a
+  large-cap filtered slice. PR #10, merged green.
+
 - **Nightly 2026-06-27** Added `momentum_consistency` MCP tool. Ranks stocks by
   how consistently their returns align across five timeframes: 1d (daily change),
   1W, 1M, 3M, and YTD performance. A stock up on the day may be noise; a stock
