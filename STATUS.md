@@ -31,6 +31,30 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-29** Added `ema_stack_scan` MCP tool. For each stock,
+  checks four moving-average alignment conditions in order from fastest to
+  slowest MA: (1) close above EMA8, (2) EMA8 above EMA21, (3) EMA21 above
+  SMA50, (4) SMA50 above SMA200. The `stack_score` is the count of
+  conditions that hold (0-4). A score of 4 is a full bull stack (price above
+  all MAs, each MA above the next slower one). A score of 0 with all four
+  conditions evaluated is a full bear stack. Missing MA fields are silently
+  skipped rather than counted as False, so the score only reflects conditions
+  that could actually be evaluated. The `ma_alignment` label is "full_bull",
+  "full_bear", or "partial_N" for in-between states. The tool doubles as a
+  market breadth indicator: the `distribution` dict reports how many stocks
+  sit at each level (0 through 4) in the sampled universe, and
+  `pct_full_bull` gives a single summary number for the health of the broad
+  trend. The `min_stack` parameter filters the return list for stocks at or
+  above a given score (e.g. `min_stack=4` for clean bull-stack setups only).
+  Core logic lives in the pure `_compute_ema_stack(rows)` function. Eight
+  offline tests cover: full bull case (all 4 True, correct labels and
+  booleans), full bear case (all 4 False), partial case (2 of 4 True,
+  "partial_2"), empty rows, no MA fields (score None, "unknown"), partial
+  missing fields (only one condition evaluable, correct score), descending
+  sort with None trailing, and distribution counts. Two live tests verify
+  the tool returns valid data for a broad scan and that `min_stack=4` returns
+  only full-bull stocks. PR #11, merged green.
+
 - **Nightly 2026-06-28** Added `relative_strength_leaders` MCP tool. Ranks stocks
   by how much they are outperforming (or lagging) their own sector's average
   rather than the raw market-wide change. The core logic lives in a pure
