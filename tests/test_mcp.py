@@ -15,6 +15,7 @@ from fastmcp import Client
 
 from backend.mcp_server import (
     _compute_breadth,
+    _compute_ema_stack,
     _compute_momentum_consistency,
     _compute_new_highs_lows,
     _compute_relative_strength,
@@ -73,6 +74,8 @@ def test_tools_and_resources_registered():
         "momentum_consistency",
         # Nightly 2026-06-28: sector-relative strength leaders.
         "relative_strength_leaders",
+        # Nightly 2026-06-29: EMA stack alignment scan.
+        "ema_stack_scan",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -1131,3 +1134,181 @@ def test_relative_strength_leaders_with_filter_live():
     assert "top" in out
     assert out["sample"] > 0
     assert len(out["top"]) <= 10
+
+
+# --- ema_stack_scan (offline math + live data) ---------------------------
+
+def test_ema_stack_is_registered():
+    tools, _, _ = _list()
+    assert "ema_stack_scan" in tools
+
+
+def test_compute_ema_stack_full_bull():
+    # All four conditions True: price > EMA8 > EMA21 > SMA50 > SMA200.
+    row = {
+        "name": "A", "close": 200.0, "change": 2.0, "sector": "Tech",
+        "EMA8": 190.0, "EMA21": 175.0, "SMA50": 150.0, "SMA200": 120.0,
+        "RSI": 65.0, "market_cap_basic": 1e12,
+    }
+    result = _compute_ema_stack([row])
+    r = result[0]
+    assert r["stack_score"] == 4
+    assert r["ma_alignment"] == "full_bull"
+    assert r["conditions_available"] == 4
+    assert r["price_vs_ema8"] is True
+    assert r["ema8_vs_ema21"] is True
+    assert r["ema21_vs_sma50"] is True
+    assert r["sma50_vs_sma200"] is True
+    assert r["rsi"] == pytest.approx(65.0)
+
+
+def test_compute_ema_stack_full_bear():
+    # All four conditions False: price < EMA8 < EMA21 < SMA50 < SMA200.
+    row = {
+        "name": "B", "close": 80.0, "change": -2.0,
+        "EMA8": 90.0, "EMA21": 100.0, "SMA50": 115.0, "SMA200": 130.0,
+    }
+    result = _compute_ema_stack([row])
+    r = result[0]
+    assert r["stack_score"] == 0
+    assert r["ma_alignment"] == "full_bear"
+    assert r["conditions_available"] == 4
+    assert r["price_vs_ema8"] is False
+    assert r["ema8_vs_ema21"] is False
+    assert r["ema21_vs_sma50"] is False
+    assert r["sma50_vs_sma200"] is False
+
+
+def test_compute_ema_stack_partial():
+    # close(110) > EMA8(105): True
+    # EMA8(105) > EMA21(100): True
+    # EMA21(100) > SMA50(120): False   <- EMA21 below SMA50
+    # SMA50(120) > SMA200(130): False  <- death-cross stack
+    row = {
+        "name": "C", "close": 110.0,
+        "EMA8": 105.0, "EMA21": 100.0, "SMA50": 120.0, "SMA200": 130.0,
+    }
+    result = _compute_ema_stack([row])
+    r = result[0]
+    assert r["stack_score"] == 2
+    assert r["ma_alignment"] == "partial_2"
+    assert r["conditions_available"] == 4
+    assert r["price_vs_ema8"] is True
+    assert r["ema8_vs_ema21"] is True
+    assert r["ema21_vs_sma50"] is False
+    assert r["sma50_vs_sma200"] is False
+
+
+def test_compute_ema_stack_empty():
+    assert _compute_ema_stack([]) == []
+
+
+def test_compute_ema_stack_no_ma_fields():
+    # Row with no MA data at all: score None, alignment "unknown".
+    row = {"name": "X", "close": 50.0, "change": 0.5}
+    result = _compute_ema_stack([row])
+    r = result[0]
+    assert r["stack_score"] is None
+    assert r["ma_alignment"] == "unknown"
+    assert r["conditions_available"] == 0
+    assert r["price_vs_ema8"] is None
+    assert r["ema8_vs_ema21"] is None
+
+
+def test_compute_ema_stack_partial_missing_fields():
+    # Only EMA8 available: only the first condition can be evaluated.
+    row = {"name": "Y", "close": 100.0, "EMA8": 90.0}
+    # close(100) > EMA8(90): True -> score 1, partial_1
+    result = _compute_ema_stack([row])
+    r = result[0]
+    assert r["stack_score"] == 1
+    assert r["ma_alignment"] == "partial_1"
+    assert r["conditions_available"] == 1
+    assert r["price_vs_ema8"] is True
+    assert r["ema8_vs_ema21"] is None
+    assert r["ema21_vs_sma50"] is None
+    assert r["sma50_vs_sma200"] is None
+
+
+def test_compute_ema_stack_sorted_desc_none_last():
+    rows = [
+        # score None (no MA data)
+        {"name": "None",  "close": 50.0},
+        # score 4 (full bull)
+        {"name": "Bull",  "close": 200.0, "EMA8": 190.0, "EMA21": 175.0, "SMA50": 150.0, "SMA200": 120.0},
+        # score 2 (partial)
+        {"name": "Mid",   "close": 110.0, "EMA8": 105.0, "EMA21": 100.0, "SMA50": 120.0, "SMA200": 130.0},
+        # score 0 (full bear)
+        {"name": "Bear",  "close": 80.0,  "EMA8": 90.0,  "EMA21": 100.0, "SMA50": 115.0, "SMA200": 130.0},
+    ]
+    result = _compute_ema_stack(rows)
+    names = [r["name"] for r in result]
+    # Full bull leads, then partial, then full bear, then None.
+    assert names[0] == "Bull"
+    assert names[-1] == "None"
+    # Scores are non-increasing (ignoring None at end).
+    scored = [r["stack_score"] for r in result if r["stack_score"] is not None]
+    assert scored == sorted(scored, reverse=True)
+
+
+def test_compute_ema_stack_distribution_counts():
+    rows = [
+        # score 4
+        {"name": "A", "close": 200.0, "EMA8": 190.0, "EMA21": 175.0, "SMA50": 150.0, "SMA200": 120.0},
+        {"name": "B", "close": 200.0, "EMA8": 190.0, "EMA21": 175.0, "SMA50": 150.0, "SMA200": 120.0},
+        # score 2
+        {"name": "C", "close": 110.0, "EMA8": 105.0, "EMA21": 100.0, "SMA50": 120.0, "SMA200": 130.0},
+        # score 0
+        {"name": "D", "close": 80.0,  "EMA8": 90.0,  "EMA21": 100.0, "SMA50": 115.0, "SMA200": 130.0},
+        # score None
+        {"name": "E", "close": 50.0},
+    ]
+    result = _compute_ema_stack(rows)
+    scores = [r["stack_score"] for r in result]
+    assert scores.count(4) == 2
+    assert scores.count(2) == 1
+    assert scores.count(0) == 1
+    assert scores.count(None) == 1
+
+
+@pytest.mark.live
+def test_ema_stack_scan_live():
+    out = _call("ema_stack_scan", {"market": "america", "limit": 300, "top": 20})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert out["sample"] <= 300
+    assert "distribution" in out
+    dist = out["distribution"]
+    assert set(dist.keys()) >= {"0", "1", "2", "3", "4", "none"}
+    assert "pct_full_bull" in out
+    assert "avg_stack_score" in out
+    top = out["top"]
+    assert isinstance(top, list)
+    assert len(top) <= 20
+    # All top entries must have required keys.
+    for r in top:
+        assert "stack_score" in r
+        assert "ma_alignment" in r
+        assert r["ma_alignment"] in {
+            "full_bull", "full_bear", "partial_0", "partial_1",
+            "partial_2", "partial_3", "unknown",
+        }
+    # Top list is sorted descending by stack_score.
+    scores = [r["stack_score"] for r in top if r["stack_score"] is not None]
+    assert scores == sorted(scores, reverse=True)
+
+
+@pytest.mark.live
+def test_ema_stack_scan_min_stack_live():
+    out = _call("ema_stack_scan", {
+        "market": "america",
+        "min_stack": 4,
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e9}],
+        "limit": 300,
+        "top": 30,
+    })
+    assert "top" in out
+    # Every returned stock should be at full bull stack score 4.
+    for r in out["top"]:
+        assert r["stack_score"] == 4
+        assert r["ma_alignment"] == "full_bull"

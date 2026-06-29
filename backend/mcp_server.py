@@ -1645,6 +1645,179 @@ def relative_strength_leaders(
     }
 
 
+# Four MA-alignment conditions that define the EMA stack.
+# Each entry is (condition_name, fast_field, slow_field).
+_STACK_CHECKS = [
+    ("price_vs_ema8",   "close", "EMA8"),
+    ("ema8_vs_ema21",   "EMA8",  "EMA21"),
+    ("ema21_vs_sma50",  "EMA21", "SMA50"),
+    ("sma50_vs_sma200", "SMA50", "SMA200"),
+]
+
+
+def _compute_ema_stack(rows: list[dict]) -> list[dict]:
+    """Score each row by how many EMA/SMA bull-alignment conditions hold.
+
+    Four conditions are checked in order from fastest to slowest MA:
+      1. close  > EMA8   (price above fast EMA: near-term strength)
+      2. EMA8   > EMA21  (fast EMAs in bull order: medium momentum)
+      3. EMA21  > SMA50  (EMA above medium SMA: trend confirmed)
+      4. SMA50  > SMA200 (golden-cross stack: long-term trend aligned)
+
+    stack_score is the count of conditions that evaluate True (0-4).
+    Conditions where one or both MA fields are missing are skipped (not
+    counted as False). stack_score is None only when no conditions could
+    be evaluated at all.
+
+    ma_alignment labels:
+      "full_bull"   score == 4 (all four checked and True)
+      "full_bear"   score == 0 and all four were evaluated (all False)
+      "partial_N"   N conditions True, fewer than four True or four False
+      "unknown"     no MA data available for any condition
+
+    Returns the list sorted descending by stack_score (None values last).
+    """
+    results = []
+    for row in rows:
+        true_count = 0
+        eval_count = 0
+        checks: dict[str, bool | None] = {}
+        for cname, fast_f, slow_f in _STACK_CHECKS:
+            fast = row.get(fast_f)
+            slow = row.get(slow_f)
+            if (
+                isinstance(fast, (int, float)) and not isinstance(fast, bool)
+                and isinstance(slow, (int, float)) and not isinstance(slow, bool)
+            ):
+                bull = float(fast) > float(slow)
+                checks[cname] = bull
+                eval_count += 1
+                if bull:
+                    true_count += 1
+            else:
+                checks[cname] = None
+
+        if eval_count == 0:
+            stack_score = None
+            ma_alignment = "unknown"
+        elif true_count == 4:
+            stack_score = 4
+            ma_alignment = "full_bull"
+        elif true_count == 0 and eval_count == 4:
+            stack_score = 0
+            ma_alignment = "full_bear"
+        else:
+            stack_score = true_count
+            ma_alignment = f"partial_{true_count}"
+
+        results.append({
+            "name": row.get("name"),
+            "close": row.get("close"),
+            "change": row.get("change"),
+            "sector": row.get("sector"),
+            "market_cap_basic": row.get("market_cap_basic"),
+            "rsi": row.get("RSI"),
+            "stack_score": stack_score,
+            "ma_alignment": ma_alignment,
+            "conditions_available": eval_count,
+            **checks,
+        })
+
+    results.sort(key=lambda x: (x["stack_score"] is None, -(x["stack_score"] or 0)))
+    return results
+
+
+@mcp.tool
+def ema_stack_scan(
+    market: str = "america",
+    min_stack: int = 0,
+    filters: list[dict] | None = None,
+    limit: int = 500,
+    top: int = 50,
+) -> dict:
+    """Rank stocks by EMA/SMA stack alignment: a bull-stack breadth indicator.
+
+    Checks four moving-average alignment conditions for each stock:
+      1. Price  above EMA8   (near-term momentum)
+      2. EMA8   above EMA21  (fast EMAs in bull order)
+      3. EMA21  above SMA50  (medium-term trend aligned)
+      4. SMA50  above SMA200 (golden-cross long-term stack)
+
+    stack_score is the count of conditions that hold (0-4). A score of 4
+    is a full bull stack: price is above every MA and each MA is above the
+    next slower one. A score of 0 is a full bear stack.
+
+    The distribution doubles as a market breadth read: when most stocks are
+    at 3-4 the broad trend is healthy; a slide to mostly 0-1 signals broad
+    internal deterioration. pct_full_bull is a single summary number.
+
+    Use min_stack=4 to screen for stocks in the cleanest uptrend; combine
+    with a `filters` market-cap floor to keep the list investable.
+
+    market:    one of list_markets() ids.
+    min_stack: return only stocks at or above this score (0 = no filter;
+               3 = bull-bias; 4 = full bull stack only).
+    filters:   optional extra filters (e.g. a market-cap floor).
+    limit:     rows to sample (default 500).
+    top:       max stocks to return (default 50).
+
+    Returns {market, universe, sample,
+    distribution:{0:n, 1:n, 2:n, 3:n, 4:n, none:n},
+    avg_stack_score, pct_full_bull, pct_full_bear,
+    top:[{name, close, change, sector, market_cap_basic, rsi,
+    stack_score, ma_alignment, conditions_available,
+    price_vs_ema8, ema8_vs_ema21, ema21_vs_sma50, sma50_vs_sma200}]}.
+    """
+    req = ScreenRequest(
+        market=market,
+        filters=[Filter(**f) for f in (filters or [])],
+        columns=[
+            "name", "close", "change", "sector", "market_cap_basic",
+            "RSI", "EMA8", "EMA21", "SMA50", "SMA200",
+        ],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+
+    scored = _compute_ema_stack(resp["rows"])
+
+    # Build distribution and summary stats.
+    dist: dict[str | int, int] = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, "none": 0}
+    score_sum = 0.0
+    n_scored = 0
+    for s in scored:
+        sc = s["stack_score"]
+        if sc is None:
+            dist["none"] += 1
+        else:
+            dist[sc] += 1
+            score_sum += sc
+            n_scored += 1
+
+    pct_full_bull = round(dist[4] / n_scored * 100, 1) if n_scored else None
+    pct_full_bear = round(dist[0] / n_scored * 100, 1) if n_scored else None
+    avg_stack = round(score_sum / n_scored, 2) if n_scored else None
+
+    if min_stack > 0:
+        filtered = [s for s in scored if s["stack_score"] is not None and s["stack_score"] >= min_stack]
+    else:
+        filtered = scored
+
+    return {
+        "market": market,
+        "universe": resp["count"],
+        "sample": len(resp["rows"]),
+        "distribution": dist,
+        "avg_stack_score": avg_stack,
+        "pct_full_bull": pct_full_bull,
+        "pct_full_bear": pct_full_bear,
+        "top": filtered[:max(1, top)],
+    }
+
+
 # ----------------------------------------------------------------------------
 # Prompts: canned, modern screening workflows the model can launch
 # ----------------------------------------------------------------------------
