@@ -15,6 +15,7 @@ from fastmcp import Client
 
 from backend.mcp_server import (
     _compute_breadth,
+    _compute_earnings_radar,
     _compute_ema_stack,
     _compute_momentum_consistency,
     _compute_new_highs_lows,
@@ -76,6 +77,8 @@ def test_tools_and_resources_registered():
         "relative_strength_leaders",
         # Nightly 2026-06-29: EMA stack alignment scan.
         "ema_stack_scan",
+        # Nightly 2026-06-30: earnings catalyst radar.
+        "earnings_radar",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -1312,3 +1315,172 @@ def test_ema_stack_scan_min_stack_live():
     for r in out["top"]:
         assert r["stack_score"] == 4
         assert r["ma_alignment"] == "full_bull"
+
+
+# --- earnings_radar (offline math + live data) ---------------------------
+
+def test_earnings_radar_is_registered():
+    tools, _, _ = _list()
+    assert "earnings_radar" in tools
+
+
+def test_compute_earnings_radar_basic():
+    rows = [
+        # Earnings today.
+        {"name": "A", "close": 100.0, "change": 1.0, "sector": "Tech",
+         "days_to_earnings": 0, "RSI": 60.0, "ATRP": 2.5, "Perf.1M": 5.0,
+         "market_cap_basic": 1e11},
+        # Earnings in 3 days (this_week).
+        {"name": "B", "close": 50.0, "change": -0.5, "sector": "Energy",
+         "days_to_earnings": 3, "RSI": 45.0, "ATRP": 3.0, "Perf.1M": -2.0,
+         "market_cap_basic": 5e10},
+        # Earnings in 7 days (later, right at max_days boundary).
+        {"name": "C", "close": 30.0, "change": 0.2, "sector": "Tech",
+         "days_to_earnings": 7, "RSI": 55.0, "ATRP": 1.8, "Perf.1M": 3.0,
+         "market_cap_basic": 2e10},
+        # Beyond max_days=7, should be excluded.
+        {"name": "D", "close": 20.0, "change": 0.0, "sector": "Finance",
+         "days_to_earnings": 10, "RSI": 50.0, "ATRP": 1.5, "Perf.1M": 0.0,
+         "market_cap_basic": 1e10},
+    ]
+    result = _compute_earnings_radar(rows, max_days=7)
+    assert result["count"] == 3
+    names = [s["name"] for s in result["stocks"]]
+    assert "A" in names and "B" in names and "C" in names
+    assert "D" not in names
+    assert result["by_bucket"]["today"] == 1
+    assert result["by_bucket"]["this_week"] == 1
+    assert result["by_bucket"]["later"] == 1
+
+
+def test_compute_earnings_radar_empty():
+    result = _compute_earnings_radar([])
+    assert result["count"] == 0
+    assert result["stocks"] == []
+    assert result["by_sector"] == []
+    assert result["by_bucket"] == {"today": 0, "this_week": 0, "later": 0}
+
+
+def test_compute_earnings_radar_missing_days_field():
+    # Rows without days_to_earnings or with None are silently skipped.
+    rows = [
+        {"name": "A", "close": 100.0, "sector": "Tech"},
+        {"name": "B", "close": 50.0, "days_to_earnings": None, "sector": "Energy"},
+        {"name": "C", "close": 30.0, "days_to_earnings": 2, "sector": "Finance"},
+    ]
+    result = _compute_earnings_radar(rows, max_days=7)
+    assert result["count"] == 1
+    assert result["stocks"][0]["name"] == "C"
+
+
+def test_compute_earnings_radar_sorted_asc():
+    rows = [
+        {"name": "Late",  "days_to_earnings": 5, "sector": "A"},
+        {"name": "Early", "days_to_earnings": 1, "sector": "B"},
+        {"name": "Today", "days_to_earnings": 0, "sector": "C"},
+    ]
+    result = _compute_earnings_radar(rows, max_days=7)
+    names = [s["name"] for s in result["stocks"]]
+    assert names[0] == "Today"
+    assert names[-1] == "Late"
+    dtes = [s["days_to_earnings"] for s in result["stocks"]]
+    assert dtes == sorted(dtes)
+
+
+def test_compute_earnings_radar_max_days_filter():
+    # max_days=3 excludes rows with days_to_earnings > 3.
+    rows = [
+        {"name": "A", "days_to_earnings": 2, "sector": "Tech"},
+        {"name": "B", "days_to_earnings": 4, "sector": "Energy"},
+        {"name": "C", "days_to_earnings": 0, "sector": "Finance"},
+    ]
+    result = _compute_earnings_radar(rows, max_days=3)
+    assert result["count"] == 2
+    names = [s["name"] for s in result["stocks"]]
+    assert "B" not in names
+    assert "A" in names and "C" in names
+
+
+def test_compute_earnings_radar_bucket_classification():
+    rows = [
+        {"name": "Today",    "days_to_earnings": 0,  "sector": "S"},
+        {"name": "Tomorrow", "days_to_earnings": 1,  "sector": "S"},
+        {"name": "FriDay",   "days_to_earnings": 5,  "sector": "S"},
+        {"name": "Next",     "days_to_earnings": 6,  "sector": "S"},
+        {"name": "Beyond",   "days_to_earnings": 14, "sector": "S"},
+    ]
+    result = _compute_earnings_radar(rows, max_days=14)
+    by_name = {s["name"]: s for s in result["stocks"]}
+    assert by_name["Today"]["bucket"] == "today"
+    assert by_name["Tomorrow"]["bucket"] == "this_week"
+    assert by_name["FriDay"]["bucket"] == "this_week"
+    assert by_name["Next"]["bucket"] == "later"
+    assert by_name["Beyond"]["bucket"] == "later"
+    assert result["by_bucket"]["today"] == 1
+    assert result["by_bucket"]["this_week"] == 2
+    assert result["by_bucket"]["later"] == 2
+
+
+def test_compute_earnings_radar_sector_breakdown():
+    rows = [
+        {"name": "T1", "days_to_earnings": 0, "sector": "Tech"},
+        {"name": "T2", "days_to_earnings": 1, "sector": "Tech"},
+        {"name": "E1", "days_to_earnings": 3, "sector": "Energy"},
+    ]
+    result = _compute_earnings_radar(rows, max_days=7)
+    by_sec = {s["sector"]: s for s in result["by_sector"]}
+    assert "Tech" in by_sec and "Energy" in by_sec
+    assert by_sec["Tech"]["count"] == 2
+    assert by_sec["Energy"]["count"] == 1
+    assert by_sec["Tech"]["today"] == 1
+    assert by_sec["Tech"]["this_week"] == 1
+    # Sorted by count desc: Tech (2) before Energy (1).
+    assert result["by_sector"][0]["sector"] == "Tech"
+
+
+def test_compute_earnings_radar_missing_atrp_field():
+    # Rows without ATRP, RSI, or perf_1m are still included; those keys are None.
+    rows = [{"name": "A", "close": 100.0, "days_to_earnings": 1, "sector": "Tech"}]
+    result = _compute_earnings_radar(rows, max_days=7)
+    assert result["count"] == 1
+    r = result["stocks"][0]
+    assert r["atrp"] is None
+    assert r["rsi"] is None
+    assert r["perf_1m"] is None
+    assert r["name"] == "A"
+
+
+@pytest.mark.live
+def test_earnings_radar_live():
+    out = _call("earnings_radar", {"market": "america", "horizon": 7, "limit": 500, "top": 30})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert "count" in out
+    assert "by_bucket" in out
+    assert set(out["by_bucket"].keys()) == {"today", "this_week", "later"}
+    assert "by_sector" in out
+    assert isinstance(out["stocks"], list)
+    assert len(out["stocks"]) <= 30
+    # Stocks sorted by days_to_earnings ascending.
+    dtes = [s["days_to_earnings"] for s in out["stocks"]]
+    assert dtes == sorted(dtes)
+    # All stocks have the required fields.
+    for s in out["stocks"]:
+        assert "name" in s
+        assert "days_to_earnings" in s
+        assert s["bucket"] in {"today", "this_week", "later"}
+        assert 0 <= s["days_to_earnings"] <= 7
+
+
+@pytest.mark.live
+def test_earnings_radar_with_filter_live():
+    out = _call("earnings_radar", {
+        "market": "america",
+        "horizon": 14,
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e9}],
+        "limit": 300,
+        "top": 20,
+    })
+    assert "count" in out
+    assert out["horizon_days"] == 14
+    assert len(out["stocks"]) <= 20
