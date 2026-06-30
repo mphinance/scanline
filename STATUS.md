@@ -31,6 +31,25 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-06-30** Added `earnings_radar` MCP tool. Finds stocks with
+  earnings announcements in the next N days (configurable `horizon`, default 7),
+  grouped by timing bucket ("today" = day-of, "this_week" = 1-5 days,
+  "later" = 6+ days) and by sector, so a trader can see at a glance which
+  sectors have the most catalyst concentration coming. Each stock entry carries
+  context for the pre-earnings setup: `days_to_earnings`, `rsi`, `atrp` (ATR %
+  as a proxy for the expected intraday range), `perf_1m`, and `market_cap_basic`.
+  The server-side filter passes `days_to_earnings between [0, horizon]` to
+  TradingView so only near-term reporters are pulled; further filtering by
+  market cap, RSI, or any other field is supported via the `filters` parameter.
+  The core logic lives in the pure `_compute_earnings_radar(rows, max_days)`
+  function. Eight offline tests cover: basic count and bucket assignment, empty
+  rows, missing days_to_earnings (silently skipped), ascending sort order,
+  max_days boundary exclusion, bucket classification for all three buckets,
+  sector breakdown accuracy with per-bucket counts, and graceful handling of
+  rows without ATRP/RSI/perf_1m (those fields are None, not an error). Two live
+  tests verify the tool returns valid shaped data for a broad scan and for a
+  large-cap filtered 14-day window. PR #12, merged green.
+
 - **Nightly 2026-06-29** Added `ema_stack_scan` MCP tool. For each stock,
   checks four moving-average alignment conditions in order from fastest to
   slowest MA: (1) close above EMA8, (2) EMA8 above EMA21, (3) EMA21 above

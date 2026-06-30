@@ -1818,6 +1818,141 @@ def ema_stack_scan(
     }
 
 
+def _compute_earnings_radar(rows: list[dict], max_days: int = 7) -> dict:
+    """Identify stocks with upcoming earnings and group them by timing bucket.
+
+    Filters to rows where days_to_earnings is an integer in [0, max_days].
+    Returns a sector breakdown and the individual stock list sorted by
+    days_to_earnings ascending (earnings today first).
+
+    Timing buckets:
+      "today"     days_to_earnings == 0
+      "this_week" 1 <= days_to_earnings <= 5
+      "later"     6 <= days_to_earnings <= max_days
+
+    Each stock entry carries: name, close, change, sector, market_cap_basic,
+    days_to_earnings, bucket, rsi, atrp (ATR % as proxy for expected range),
+    perf_1m.
+    Rows without a numeric days_to_earnings are silently skipped.
+    """
+    stocks: list[dict] = []
+    for row in rows:
+        dte = row.get("days_to_earnings")
+        if not isinstance(dte, (int, float)) or isinstance(dte, bool):
+            continue
+        dte_int = int(dte)
+        if not (0 <= dte_int <= max_days):
+            continue
+
+        if dte_int == 0:
+            bucket = "today"
+        elif dte_int <= 5:
+            bucket = "this_week"
+        else:
+            bucket = "later"
+
+        stocks.append({
+            "name": row.get("name"),
+            "close": row.get("close"),
+            "change": row.get("change"),
+            "sector": row.get("sector") or "Unknown",
+            "market_cap_basic": row.get("market_cap_basic"),
+            "days_to_earnings": dte_int,
+            "bucket": bucket,
+            "rsi": row.get("RSI"),
+            "atrp": row.get("ATRP"),
+            "perf_1m": row.get("Perf.1M"),
+        })
+
+    stocks.sort(key=lambda x: (x["days_to_earnings"], x.get("name") or ""))
+
+    by_bucket: dict[str, int] = {"today": 0, "this_week": 0, "later": 0}
+    sec_buckets: dict[str, dict] = {}
+    for s in stocks:
+        by_bucket[s["bucket"]] += 1
+        sec = s["sector"]
+        b = sec_buckets.setdefault(
+            sec, {"count": 0, "today": 0, "this_week": 0, "later": 0}
+        )
+        b["count"] += 1
+        b[s["bucket"]] += 1
+
+    by_sector = sorted(
+        [{"sector": sec, **b} for sec, b in sec_buckets.items()],
+        key=lambda s: -s["count"],
+    )
+
+    return {
+        "count": len(stocks),
+        "by_bucket": by_bucket,
+        "by_sector": by_sector,
+        "stocks": stocks,
+    }
+
+
+@mcp.tool
+def earnings_radar(
+    market: str = "america",
+    horizon: int = 7,
+    filters: list[dict] | None = None,
+    limit: int = 1000,
+    top: int = 50,
+) -> dict:
+    """Find stocks with earnings announcements in the next N days.
+
+    Earnings are the biggest single-day catalyst. This tool builds a forward
+    radar of names about to report, grouped by timing bucket (today, this_week,
+    later) and sector, with the context a trader needs before the bell:
+    RSI, ATR% (a proxy for the expected intraday range), 1-month performance,
+    and market cap.
+
+    Use it the morning before the market opens to build an earnings watch-list.
+    Pair with sector_rotation to see which sectors have the most catalysts
+    coming, or with analyze to drill into the setups you care about most.
+
+    market:  one of list_markets() ids (america, crypto, ...).
+    horizon: days ahead to look for earnings (default 7 = one week). Use 1 for
+             today-only, 14 for a two-week forward radar.
+    filters: optional extra filters (e.g. market_cap_basic > 1e9 to skip micro-
+             caps, or RSI < 40 for oversold pre-earnings ideas).
+    limit:   rows to pull from the market (default 1000). Raise to 2000 if you
+             want broader small-cap coverage.
+    top:     max stocks to return in the stocks list (default 50).
+
+    Returns {market, universe, sample, horizon_days, count,
+    by_bucket:{today,this_week,later},
+    by_sector:[{sector,count,today,this_week,later}],
+    stocks:[{name,close,change,sector,market_cap_basic,days_to_earnings,
+    bucket,rsi,atrp,perf_1m}]}.
+    """
+    base_filters = [Filter(**f) for f in (filters or [])]
+    base_filters.append(
+        Filter(field="days_to_earnings", op="between", value=[0, max(1, horizon)])
+    )
+    req = ScreenRequest(
+        market=market,
+        filters=base_filters,
+        columns=[
+            "name", "close", "change", "sector", "market_cap_basic",
+            "days_to_earnings", "RSI", "ATRP", "Perf.1M",
+        ],
+        sort=[SortKey(field="days_to_earnings", dir="asc")],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+
+    result = _compute_earnings_radar(resp["rows"], max_days=horizon)
+    result["stocks"] = result["stocks"][:max(1, top)]
+    result["universe"] = resp["count"]
+    result["market"] = market
+    result["horizon_days"] = horizon
+    result["sample"] = len(resp["rows"])
+    return result
+
+
 # ----------------------------------------------------------------------------
 # Prompts: canned, modern screening workflows the model can launch
 # ----------------------------------------------------------------------------
