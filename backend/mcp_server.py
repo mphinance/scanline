@@ -1953,6 +1953,178 @@ def earnings_radar(
     return result
 
 
+def _compute_gap_scanner(rows: list[dict], min_gap_pct: float = 1.0) -> dict:
+    """Identify stocks that opened with a significant gap and track fill progress.
+
+    Uses the `gap` field (open vs yesterday's close %) together with `open` and
+    `close` to compute how much of the gap has been filled during the session.
+
+    gap_fill_pct formula:
+        (open - close) / (open - prev_close) * 100
+    where prev_close = open / (1 + gap/100).
+
+    At the open (close == open): fill = 0%.
+    When price retraces to yesterday's close (close == prev_close): fill = 100%.
+    When price overshoots past yesterday's close: fill > 100%.
+
+    is_holding: fill < 25 (gap largely intact, "gap and go" territory).
+    is_filled:  fill >= 100 (price retraced through the opening gap level).
+
+    Rows without a numeric `gap` field or whose |gap| < min_gap_pct are skipped.
+    Returns both sides sorted by absolute gap size descending.
+    """
+    if not rows:
+        return {
+            "count": 0,
+            "gap_up_count": 0,
+            "gap_down_count": 0,
+            "by_sector": [],
+            "gap_up": [],
+            "gap_down": [],
+        }
+
+    qualified: list[dict] = []
+    for row in rows:
+        gap = row.get("gap")
+        if not isinstance(gap, (int, float)) or isinstance(gap, bool):
+            continue
+        if abs(gap) < min_gap_pct:
+            continue
+
+        open_price = row.get("open")
+        close = row.get("close")
+
+        prev_close: float | None = None
+        gap_fill_pct: float | None = None
+        is_holding = False
+        is_filled = False
+
+        if (
+            isinstance(open_price, (int, float)) and not isinstance(open_price, bool)
+            and isinstance(close, (int, float)) and not isinstance(close, bool)
+        ):
+            divisor = 1.0 + gap / 100.0
+            if abs(divisor) > 0.001:
+                prev_close = open_price / divisor
+                gap_span = open_price - prev_close
+                if abs(gap_span) > 1e-9:
+                    gap_fill_pct = round((open_price - close) / gap_span * 100.0, 1)
+                else:
+                    gap_fill_pct = 0.0
+                is_holding = gap_fill_pct < 25.0
+                is_filled = gap_fill_pct >= 100.0
+
+        gap_type = "gap_up" if gap > 0 else "gap_down"
+        qualified.append({
+            "name": row.get("name"),
+            "close": close,
+            "open": open_price,
+            "change": row.get("change"),
+            "sector": row.get("sector") or "Unknown",
+            "gap": round(float(gap), 2),
+            "gap_type": gap_type,
+            "prev_close": round(prev_close, 4) if prev_close is not None else None,
+            "gap_fill_pct": gap_fill_pct,
+            "is_holding": is_holding,
+            "is_filled": is_filled,
+            "volume": row.get("volume"),
+            "rvol": row.get("relative_volume_10d_calc"),
+        })
+
+    qualified.sort(key=lambda x: -abs(x["gap"]))
+
+    gap_up = [q for q in qualified if q["gap_type"] == "gap_up"]
+    gap_down = [q for q in qualified if q["gap_type"] == "gap_down"]
+
+    sec_buckets: dict[str, dict] = {}
+    for r in qualified:
+        sec = r["sector"]
+        b = sec_buckets.setdefault(sec, {"count": 0, "gap_up": 0, "gap_down": 0})
+        b["count"] += 1
+        if r["gap_type"] == "gap_up":
+            b["gap_up"] += 1
+        else:
+            b["gap_down"] += 1
+
+    by_sector = sorted(
+        [{"sector": sec, **b} for sec, b in sec_buckets.items()],
+        key=lambda s: -s["count"],
+    )
+
+    return {
+        "count": len(qualified),
+        "gap_up_count": len(gap_up),
+        "gap_down_count": len(gap_down),
+        "by_sector": by_sector,
+        "gap_up": gap_up,
+        "gap_down": gap_down,
+    }
+
+
+@mcp.tool
+def gap_scanner(
+    market: str = "america",
+    min_gap_pct: float = 1.0,
+    filters: list[dict] | None = None,
+    limit: int = 500,
+    top: int = 50,
+) -> dict:
+    """Find stocks that opened with a significant gap and track intraday fill progress.
+
+    A gap occurs when a stock opens above (gap up) or below (gap down) the
+    previous session's close. Gaps are high-conviction setups: when the gap
+    holds, it signals momentum continuation ("gap and go"); when it fills, it
+    signals mean reversion back to the prior close.
+
+    For each qualifying gap this tool reports:
+      gap:          the opening gap % (positive = gap up, negative = gap down)
+      prev_close:   yesterday's close, back-calculated from open and gap%
+      gap_fill_pct: how much of the opening gap the current price has retraced.
+                    0% = price still at the open; 100% = fully filled back to
+                    yesterday's close; >100% = price overshot past the gap level.
+      is_holding:   True when gap_fill_pct < 25 (gap still largely intact)
+      is_filled:    True when gap_fill_pct >= 100 (full gap fill occurred)
+      rvol:         relative volume (conviction read on the gap)
+
+    market:      one of list_markets() ids.
+    min_gap_pct: minimum absolute gap % to qualify (default 1.0). Use 2.0
+                 for larger, cleaner gaps; 0.5 to catch small gaps too.
+    filters:     optional extra filters (e.g. a market-cap floor).
+    limit:       rows to sample (default 500).
+    top:         max stocks to return per side, gap_up and gap_down (default 50).
+
+    Returns {market, universe, sample, min_gap_pct, count,
+    gap_up_count, gap_down_count,
+    by_sector:[{sector, count, gap_up, gap_down}],
+    gap_up:[{name, close, open, change, sector, gap, prev_close, gap_fill_pct,
+    is_holding, is_filled, volume, rvol}],
+    gap_down:[same shape]}.
+    """
+    req = ScreenRequest(
+        market=market,
+        filters=[Filter(**f) for f in (filters or [])],
+        columns=[
+            "name", "close", "open", "change", "sector",
+            "gap", "volume", "relative_volume_10d_calc",
+        ],
+        sort=[SortKey(field="gap", dir="desc")],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+
+    result = _compute_gap_scanner(resp["rows"], min_gap_pct=min_gap_pct)
+    result["gap_up"] = result["gap_up"][:max(1, top)]
+    result["gap_down"] = result["gap_down"][:max(1, top)]
+    result["universe"] = resp["count"]
+    result["market"] = market
+    result["sample"] = len(resp["rows"])
+    result["min_gap_pct"] = min_gap_pct
+    return result
+
+
 # ----------------------------------------------------------------------------
 # Prompts: canned, modern screening workflows the model can launch
 # ----------------------------------------------------------------------------
