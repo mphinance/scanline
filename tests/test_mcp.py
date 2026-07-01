@@ -17,6 +17,7 @@ from backend.mcp_server import (
     _compute_breadth,
     _compute_earnings_radar,
     _compute_ema_stack,
+    _compute_gap_scanner,
     _compute_momentum_consistency,
     _compute_new_highs_lows,
     _compute_relative_strength,
@@ -79,6 +80,8 @@ def test_tools_and_resources_registered():
         "ema_stack_scan",
         # Nightly 2026-06-30: earnings catalyst radar.
         "earnings_radar",
+        # Nightly 2026-07-01: gap scanner with fill tracking.
+        "gap_scanner",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -1484,3 +1487,221 @@ def test_earnings_radar_with_filter_live():
     assert "count" in out
     assert out["horizon_days"] == 14
     assert len(out["stocks"]) <= 20
+
+
+# --- gap_scanner (offline math + live data) ------------------------------
+
+def test_gap_scanner_is_registered():
+    tools, _, _ = _list()
+    assert "gap_scanner" in tools
+
+
+def test_compute_gap_scanner_basic():
+    # gap=10%: open=110, prev_close=100. gap=−5%: open=95, prev_close=100.
+    rows = [
+        {"name": "Up",   "open": 110.0, "close": 107.0, "gap": 10.0,  "change": 5.0,  "sector": "Tech"},
+        {"name": "Down", "open":  95.0, "close":  96.0, "gap": -5.0,  "change": -2.0, "sector": "Energy"},
+        {"name": "Flat", "open": 100.0, "close": 100.5, "gap":  0.3,  "change": 0.5,  "sector": "Finance"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    assert result["count"] == 2             # Flat excluded (0.3% < 1.0%)
+    assert result["gap_up_count"] == 1
+    assert result["gap_down_count"] == 1
+    names = {r["name"] for r in result["gap_up"] + result["gap_down"]}
+    assert "Up" in names
+    assert "Down" in names
+    assert "Flat" not in names
+
+
+def test_compute_gap_scanner_empty():
+    result = _compute_gap_scanner([])
+    assert result["count"] == 0
+    assert result["gap_up"] == []
+    assert result["gap_down"] == []
+    assert result["by_sector"] == []
+
+
+def test_compute_gap_scanner_below_threshold():
+    # All gaps are below the 2% threshold; none should qualify.
+    rows = [
+        {"name": "A", "open": 101.0, "close": 100.5, "gap": 0.8, "sector": "Tech"},
+        {"name": "B", "open":  99.5, "close": 100.0, "gap": -0.5, "sector": "Energy"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=2.0)
+    assert result["count"] == 0
+    assert result["gap_up"] == []
+    assert result["gap_down"] == []
+
+
+def test_compute_gap_scanner_fill_pct_gap_up():
+    # open=110, gap=10% => prev_close = 110/1.1 = 100.0
+    # Case A: close=110 (no fill)  => (110-110)/(110-100)*100 = 0%
+    # Case B: close=105 (50% fill) => (110-105)/(110-100)*100 = 50%
+    # Case C: close=100 (full fill)=> (110-100)/(110-100)*100 = 100%
+    # Case D: close=95 (overshoot) => (110-95)/(110-100)*100 = 150%
+    rows = [
+        {"name": "NoFill",  "open": 110.0, "close": 110.0, "gap": 10.0, "sector": "S"},
+        {"name": "HalfFill","open": 110.0, "close": 105.0, "gap": 10.0, "sector": "S"},
+        {"name": "FullFill","open": 110.0, "close": 100.0, "gap": 10.0, "sector": "S"},
+        {"name": "Overshoot","open": 110.0, "close":  95.0, "gap": 10.0, "sector": "S"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    by_name = {r["name"]: r for r in result["gap_up"]}
+    assert by_name["NoFill"]["gap_fill_pct"] == pytest.approx(0.0)
+    assert by_name["HalfFill"]["gap_fill_pct"] == pytest.approx(50.0)
+    assert by_name["FullFill"]["gap_fill_pct"] == pytest.approx(100.0)
+    assert by_name["Overshoot"]["gap_fill_pct"] == pytest.approx(150.0)
+
+
+def test_compute_gap_scanner_fill_pct_gap_down():
+    # open=90, gap=-10% => prev_close = 90/0.9 = 100.0
+    # Case A: close=90 (no fill)   => (90-90)/(90-100)*100 = 0%
+    # Case B: close=95 (50% fill)  => (90-95)/(90-100)*100 = 50%
+    # Case C: close=100 (full fill)=> (90-100)/(90-100)*100 = 100%
+    # Case D: close=105 (overshoot)=> (90-105)/(90-100)*100 = 150%
+    rows = [
+        {"name": "NoFill",   "open": 90.0, "close":  90.0, "gap": -10.0, "sector": "S"},
+        {"name": "HalfFill", "open": 90.0, "close":  95.0, "gap": -10.0, "sector": "S"},
+        {"name": "FullFill", "open": 90.0, "close": 100.0, "gap": -10.0, "sector": "S"},
+        {"name": "Overshoot","open": 90.0, "close": 105.0, "gap": -10.0, "sector": "S"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    by_name = {r["name"]: r for r in result["gap_down"]}
+    assert by_name["NoFill"]["gap_fill_pct"] == pytest.approx(0.0)
+    assert by_name["HalfFill"]["gap_fill_pct"] == pytest.approx(50.0)
+    assert by_name["FullFill"]["gap_fill_pct"] == pytest.approx(100.0)
+    assert by_name["Overshoot"]["gap_fill_pct"] == pytest.approx(150.0)
+
+
+def test_compute_gap_scanner_is_holding_and_filled_flags():
+    # open=110, gap=10% => prev_close=100
+    rows = [
+        # fill=0%: is_holding=True, is_filled=False
+        {"name": "Hold",   "open": 110.0, "close": 110.0, "gap": 10.0, "sector": "S"},
+        # fill=24%: is_holding=True (< 25), is_filled=False
+        {"name": "Almost", "open": 110.0, "close": 107.6, "gap": 10.0, "sector": "S"},
+        # fill=26%: is_holding=False (>= 25), is_filled=False
+        {"name": "Moving", "open": 110.0, "close": 107.4, "gap": 10.0, "sector": "S"},
+        # fill=100%: is_holding=False, is_filled=True
+        {"name": "Filled", "open": 110.0, "close": 100.0, "gap": 10.0, "sector": "S"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    by_name = {r["name"]: r for r in result["gap_up"]}
+    assert by_name["Hold"]["is_holding"] is True
+    assert by_name["Hold"]["is_filled"] is False
+    assert by_name["Almost"]["is_holding"] is True
+    assert by_name["Moving"]["is_holding"] is False
+    assert by_name["Moving"]["is_filled"] is False
+    assert by_name["Filled"]["is_filled"] is True
+    assert by_name["Filled"]["is_holding"] is False
+
+
+def test_compute_gap_scanner_sorted_by_abs_gap():
+    # Results should be ordered by |gap| descending, mixing gap_up and gap_down.
+    rows = [
+        {"name": "Small",    "open": 102.0, "close": 102.0, "gap":  2.0, "sector": "S"},
+        {"name": "Biggest",  "open": 115.0, "close": 115.0, "gap": 15.0, "sector": "S"},
+        {"name": "NegMid",   "open":  93.0, "close":  93.0, "gap": -7.0, "sector": "S"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    # Combined qualified list is sorted by |gap| desc.
+    all_rows = result["gap_up"] + result["gap_down"]
+    abs_gaps = [abs(r["gap"]) for r in all_rows]
+    # Biggest (15%) should appear first in gap_up.
+    assert result["gap_up"][0]["name"] == "Biggest"
+    # The gap_down list has only NegMid (7%), gap_up has Biggest (15%) and Small (2%).
+    assert abs(result["gap_up"][0]["gap"]) >= abs(result["gap_up"][-1]["gap"])
+
+
+def test_compute_gap_scanner_missing_gap_field():
+    # Rows without a numeric `gap` field are silently skipped.
+    rows = [
+        {"name": "NoGap",   "open": 100.0, "close": 100.0, "sector": "S"},
+        {"name": "NullGap", "open": 100.0, "close": 100.0, "gap": None, "sector": "S"},
+        {"name": "HasGap",  "open": 110.0, "close": 110.0, "gap": 5.0,  "sector": "S"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    assert result["count"] == 1
+    assert result["gap_up"][0]["name"] == "HasGap"
+
+
+def test_compute_gap_scanner_missing_open_or_close():
+    # When open or close is missing, gap_fill_pct and flags are None/False.
+    rows = [
+        {"name": "NoOpen",  "close": 105.0, "gap": 5.0,  "sector": "S"},
+        {"name": "NoClose", "open": 110.0,  "gap": 10.0, "sector": "S"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    assert result["count"] == 2
+    by_name = {r["name"]: r for r in result["gap_up"]}
+    assert by_name["NoOpen"]["gap_fill_pct"] is None
+    assert by_name["NoOpen"]["is_holding"] is False
+    assert by_name["NoClose"]["gap_fill_pct"] is None
+
+
+def test_compute_gap_scanner_sector_breakdown():
+    rows = [
+        {"name": "T1", "open": 110.0, "close": 109.0, "gap": 5.0,  "sector": "Tech"},
+        {"name": "T2", "open": 112.0, "close": 111.0, "gap": 3.0,  "sector": "Tech"},
+        {"name": "E1", "open":  94.0, "close":  95.0, "gap": -4.0, "sector": "Energy"},
+    ]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    by_sec = {s["sector"]: s for s in result["by_sector"]}
+    assert "Tech" in by_sec and "Energy" in by_sec
+    assert by_sec["Tech"]["count"] == 2
+    assert by_sec["Tech"]["gap_up"] == 2
+    assert by_sec["Tech"]["gap_down"] == 0
+    assert by_sec["Energy"]["count"] == 1
+    assert by_sec["Energy"]["gap_down"] == 1
+    # Sorted by count desc: Tech before Energy.
+    assert result["by_sector"][0]["sector"] == "Tech"
+
+
+def test_compute_gap_scanner_prev_close_accuracy():
+    # Verify back-calculation: gap=10%, open=110 => prev_close=100 exactly.
+    rows = [{"name": "A", "open": 110.0, "close": 110.0, "gap": 10.0, "sector": "S"}]
+    result = _compute_gap_scanner(rows, min_gap_pct=1.0)
+    r = result["gap_up"][0]
+    assert r["prev_close"] == pytest.approx(100.0, abs=1e-4)
+    assert r["gap_fill_pct"] == pytest.approx(0.0)
+
+
+@pytest.mark.live
+def test_gap_scanner_live():
+    out = _call("gap_scanner", {"market": "america", "limit": 300, "min_gap_pct": 0.5})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert out["sample"] <= 300
+    assert "count" in out
+    assert "gap_up_count" in out
+    assert "gap_down_count" in out
+    assert out["gap_up_count"] + out["gap_down_count"] == out["count"]
+    assert isinstance(out["gap_up"], list)
+    assert isinstance(out["gap_down"], list)
+    # Every returned gap must be at or above the threshold.
+    for r in out["gap_up"] + out["gap_down"]:
+        assert abs(r["gap"]) >= 0.5
+    # gap_up entries have positive gap.
+    for r in out["gap_up"]:
+        assert r["gap"] > 0
+    # gap_down entries have negative gap.
+    for r in out["gap_down"]:
+        assert r["gap"] < 0
+    # gap_fill_pct is a float when open and close are available.
+    filled = [r for r in out["gap_up"] + out["gap_down"] if r["gap_fill_pct"] is not None]
+    for r in filled:
+        assert isinstance(r["gap_fill_pct"], float)
+
+
+@pytest.mark.live
+def test_gap_scanner_with_filter_live():
+    out = _call("gap_scanner", {
+        "market": "america",
+        "min_gap_pct": 1.0,
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e9}],
+        "limit": 200,
+        "top": 20,
+    })
+    assert "gap_up_count" in out
+    assert len(out["gap_up"]) <= 20
+    assert len(out["gap_down"]) <= 20
