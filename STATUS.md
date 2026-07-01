@@ -31,6 +31,28 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-07-01** Added `gap_scanner` MCP tool. Surfaces stocks that
+  opened with a significant gap from the previous session's close and tracks
+  how much of the gap has been filled during the session. The `gap` field
+  (already in the catalog) gives the opening gap %; `prev_close` is
+  back-calculated as `open / (1 + gap/100)` so no extra fields are needed.
+  `gap_fill_pct` = `(open - close) / (open - prev_close) * 100`: 0% means
+  the gap is intact, 100% means it has fully filled back to yesterday's
+  close, and >100% means the price overshot past the gap level. Two flags
+  make filtering instant: `is_holding` (fill < 25%, "gap and go" territory)
+  and `is_filled` (fill >= 100%, mean-reversion setup). Both gap_up and
+  gap_down lists are sorted by absolute gap size descending so the biggest
+  gaps lead. A sector breakdown shows where gap activity is concentrated.
+  The core logic lives in the pure `_compute_gap_scanner(rows, min_gap_pct)`
+  function. Eleven offline tests cover: basic direction classification and
+  threshold filtering, empty rows, gaps below threshold excluded, gap_fill_pct
+  math for gap up (0/50/100/150%), gap_fill_pct math for gap down (same four
+  cases), is_holding and is_filled flag boundaries at 25% and 100%, sort
+  order by |gap|, missing gap field (silently skipped), missing open or close
+  (fill stays None, no crash), sector breakdown accuracy and sort, and
+  prev_close back-calculation accuracy. Two live tests verify valid data shape
+  for a broad scan and a large-cap filtered slice. PR #13.
+
 - **Nightly 2026-06-30** Added `earnings_radar` MCP tool. Finds stocks with
   earnings announcements in the next N days (configurable `horizon`, default 7),
   grouped by timing bucket ("today" = day-of, "this_week" = 1-5 days,
