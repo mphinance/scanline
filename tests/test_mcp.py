@@ -15,6 +15,7 @@ from fastmcp import Client
 
 from backend.mcp_server import (
     _compute_breadth,
+    _compute_dividend_quality,
     _compute_earnings_radar,
     _compute_ema_stack,
     _compute_gap_scanner,
@@ -23,6 +24,7 @@ from backend.mcp_server import (
     _compute_relative_strength,
     _compute_sector_rotation,
     _compute_volume_leaders,
+    _payout_health,
     mcp,
     normalize_interval,
     rating_label,
@@ -82,6 +84,8 @@ def test_tools_and_resources_registered():
         "earnings_radar",
         # Nightly 2026-07-01: gap scanner with fill tracking.
         "gap_scanner",
+        # Nightly 2026-07-02: dividend quality screen.
+        "dividend_screen",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -1705,3 +1709,254 @@ def test_gap_scanner_with_filter_live():
     assert "gap_up_count" in out
     assert len(out["gap_up"]) <= 20
     assert len(out["gap_down"]) <= 20
+
+
+# --- dividend_screen (offline math + payout helper + live data) ----------
+
+def test_dividend_screen_is_registered():
+    tools, _, _ = _list()
+    assert "dividend_screen" in tools
+
+
+def test_payout_health_bands():
+    # Ideal range: exact boundaries.
+    assert _payout_health(20.0) == pytest.approx(1.0)
+    assert _payout_health(50.0) == pytest.approx(1.0)
+    assert _payout_health(75.0) == pytest.approx(1.0)
+    # Low payout ramp: 0% -> 0.4, 20% -> 1.0.
+    assert _payout_health(0.0) == pytest.approx(0.4)
+    assert _payout_health(10.0) == pytest.approx(0.7, abs=1e-6)
+    # High payout ramp: 75% -> 1.0, 100% -> 0.0.
+    assert _payout_health(100.0) == pytest.approx(0.0)
+    # Beyond bounds.
+    assert _payout_health(-1.0) == pytest.approx(0.0)
+    assert _payout_health(101.0) == pytest.approx(0.0)
+    # Missing data.
+    assert _payout_health(None) == pytest.approx(0.5)
+
+
+def test_compute_dividend_quality_basic():
+    # A: high yield, Aristocrat, healthy payout -> should lead.
+    # B: medium yield, Achiever, ok payout -> middle.
+    # C: low yield, Payer, high payout -> trails.
+    rows = [
+        {
+            "name": "A", "close": 100.0, "change": 1.0, "sector": "Consumer",
+            "market_cap_basic": 5e10, "dividend_yield_recent": 4.0,
+            "continuous_dividend_payout": 30, "continuous_dividend_growth": 28,
+            "payout_ratio": 50.0, "return_on_equity": 20.0, "Perf.1M": 3.0,
+        },
+        {
+            "name": "B", "close": 50.0, "change": -0.5, "sector": "Utilities",
+            "market_cap_basic": 2e10, "dividend_yield_recent": 3.0,
+            "continuous_dividend_payout": 15, "continuous_dividend_growth": 12,
+            "payout_ratio": 60.0, "return_on_equity": 12.0, "Perf.1M": 1.0,
+        },
+        {
+            "name": "C", "close": 20.0, "change": -1.0, "sector": "Energy",
+            "market_cap_basic": 5e9, "dividend_yield_recent": 1.5,
+            "continuous_dividend_payout": 5, "continuous_dividend_growth": 0,
+            "payout_ratio": 90.0, "return_on_equity": 5.0, "Perf.1M": -2.0,
+        },
+    ]
+    result = _compute_dividend_quality(rows, min_yield=1.0)
+
+    assert result["count"] == 3
+    names = [s["name"] for s in result["stocks"]]
+    # A (highest quality: yield=4%, 28yr growth, 50% payout) leads.
+    assert names[0] == "A"
+    # C (lowest: 1.5% yield, no growth, 90% payout) trails.
+    assert names[-1] == "C"
+    # Categories.
+    by_name = {s["name"]: s for s in result["stocks"]}
+    assert by_name["A"]["category"] == "Aristocrat"
+    assert by_name["B"]["category"] == "Achiever"
+    assert by_name["C"]["category"] == "Payer"
+    # avg_yield is the mean of all three yields.
+    assert result["avg_yield"] == pytest.approx((4.0 + 3.0 + 1.5) / 3.0, abs=0.01)
+
+
+def test_compute_dividend_quality_empty():
+    result = _compute_dividend_quality([])
+    assert result["count"] == 0
+    assert result["stocks"] == []
+    assert result["by_sector"] == []
+    assert result["avg_yield"] is None
+    assert result["by_category"] == {"Aristocrat": 0, "Achiever": 0, "Grower": 0, "Payer": 0}
+
+
+def test_compute_dividend_quality_min_yield_filter():
+    # Only rows with div_yield >= min_yield qualify.
+    rows = [
+        {"name": "Hi", "dividend_yield_recent": 3.0, "continuous_dividend_growth": 5,
+         "payout_ratio": 40.0, "sector": "Tech"},
+        {"name": "Lo", "dividend_yield_recent": 0.5, "continuous_dividend_growth": 2,
+         "payout_ratio": 30.0, "sector": "Tech"},
+    ]
+    result = _compute_dividend_quality(rows, min_yield=2.0)
+    assert result["count"] == 1
+    assert result["stocks"][0]["name"] == "Hi"
+
+
+def test_compute_dividend_quality_categories():
+    rows = [
+        {"name": "Arist",  "dividend_yield_recent": 2.0, "continuous_dividend_growth": 25, "sector": "S"},
+        {"name": "Achiev", "dividend_yield_recent": 2.0, "continuous_dividend_growth": 10, "sector": "S"},
+        {"name": "Grower", "dividend_yield_recent": 2.0, "continuous_dividend_growth": 5,  "sector": "S"},
+        {"name": "Payer",  "dividend_yield_recent": 2.0, "continuous_dividend_growth": 0,  "sector": "S"},
+        {"name": "NoDat",  "dividend_yield_recent": 2.0,                                   "sector": "S"},
+    ]
+    result = _compute_dividend_quality(rows, min_yield=1.0)
+    by_name = {s["name"]: s for s in result["stocks"]}
+    assert by_name["Arist"]["category"] == "Aristocrat"
+    assert by_name["Achiev"]["category"] == "Achiever"
+    assert by_name["Grower"]["category"] == "Grower"
+    assert by_name["Payer"]["category"] == "Payer"
+    assert by_name["NoDat"]["category"] == "Payer"
+    cats = result["by_category"]
+    assert cats["Aristocrat"] == 1
+    assert cats["Achiever"] == 1
+    assert cats["Grower"] == 1
+    assert cats["Payer"] == 2
+
+
+def test_compute_dividend_quality_missing_yield_skipped():
+    rows = [
+        {"name": "NoYield", "sector": "S"},
+        {"name": "NullYield", "dividend_yield_recent": None, "sector": "S"},
+        {"name": "HasYield", "dividend_yield_recent": 2.5, "continuous_dividend_growth": 3,
+         "payout_ratio": 45.0, "sector": "S"},
+    ]
+    result = _compute_dividend_quality(rows, min_yield=1.0)
+    assert result["count"] == 1
+    assert result["stocks"][0]["name"] == "HasYield"
+
+
+def test_compute_dividend_quality_score_bounds():
+    rows = [
+        {"name": str(i), "dividend_yield_recent": float(y),
+         "continuous_dividend_growth": i * 5, "payout_ratio": 30.0 + i * 10, "sector": "S"}
+        for i, y in enumerate([1.5, 2.5, 4.0, 6.0, 8.0])
+    ]
+    result = _compute_dividend_quality(rows, min_yield=1.0)
+    for s in result["stocks"]:
+        assert s["dq_score"] is not None
+        assert 0.0 <= s["dq_score"] <= 100.0
+
+
+def test_compute_dividend_quality_sorted_desc():
+    rows = [
+        {"name": "Low",  "dividend_yield_recent": 1.5, "continuous_dividend_growth": 0,
+         "payout_ratio": 90.0, "sector": "S"},
+        {"name": "High", "dividend_yield_recent": 5.0, "continuous_dividend_growth": 30,
+         "payout_ratio": 45.0, "sector": "S"},
+        {"name": "Mid",  "dividend_yield_recent": 3.0, "continuous_dividend_growth": 10,
+         "payout_ratio": 55.0, "sector": "S"},
+    ]
+    result = _compute_dividend_quality(rows, min_yield=1.0)
+    scores = [s["dq_score"] for s in result["stocks"]]
+    assert scores == sorted(scores, reverse=True)
+    assert result["stocks"][0]["name"] == "High"
+
+
+def test_compute_dividend_quality_sector_breakdown():
+    rows = [
+        {"name": "U1", "dividend_yield_recent": 4.0, "continuous_dividend_growth": 20,
+         "payout_ratio": 65.0, "sector": "Utilities"},
+        {"name": "U2", "dividend_yield_recent": 3.5, "continuous_dividend_growth": 8,
+         "payout_ratio": 60.0, "sector": "Utilities"},
+        {"name": "C1", "dividend_yield_recent": 2.0, "continuous_dividend_growth": 5,
+         "payout_ratio": 40.0, "sector": "Consumer"},
+    ]
+    result = _compute_dividend_quality(rows, min_yield=1.0)
+    by_sec = {s["sector"]: s for s in result["by_sector"]}
+
+    assert "Utilities" in by_sec and "Consumer" in by_sec
+    assert by_sec["Utilities"]["count"] == 2
+    assert by_sec["Consumer"]["count"] == 1
+    # avg_yield for Utilities = (4.0 + 3.5) / 2 = 3.75.
+    assert by_sec["Utilities"]["avg_yield"] == pytest.approx(3.75, abs=0.01)
+    # Sorted by count desc: Utilities (2) before Consumer (1).
+    assert result["by_sector"][0]["sector"] == "Utilities"
+    # U1 has 20 years growing -> Achiever (not Aristocrat since 20 < 25).
+    assert by_sec["Utilities"]["achievers"] >= 1
+
+
+def test_compute_dividend_quality_by_category_counts():
+    rows = [
+        {"name": "A1", "dividend_yield_recent": 3.0, "continuous_dividend_growth": 26, "sector": "S"},
+        {"name": "A2", "dividend_yield_recent": 2.5, "continuous_dividend_growth": 30, "sector": "S"},
+        {"name": "Ac", "dividend_yield_recent": 2.0, "continuous_dividend_growth": 15, "sector": "S"},
+        {"name": "Gr", "dividend_yield_recent": 1.5, "continuous_dividend_growth": 3,  "sector": "S"},
+        {"name": "Pa", "dividend_yield_recent": 4.0, "continuous_dividend_growth": 0,  "sector": "S"},
+    ]
+    result = _compute_dividend_quality(rows, min_yield=1.0)
+    cats = result["by_category"]
+    assert cats["Aristocrat"] == 2
+    assert cats["Achiever"] == 1
+    assert cats["Grower"] == 1
+    assert cats["Payer"] == 1
+    assert sum(cats.values()) == 5
+
+
+def test_compute_dividend_quality_payout_extremes():
+    # Extreme payout (>100%) gets 0.0, which reduces dq_score.
+    # Healthy payout (50%) gets 1.0, which raises dq_score.
+    rows = [
+        {"name": "Healthy",  "dividend_yield_recent": 3.0, "continuous_dividend_growth": 5,
+         "payout_ratio": 50.0, "sector": "S"},
+        {"name": "Extreme",  "dividend_yield_recent": 3.0, "continuous_dividend_growth": 5,
+         "payout_ratio": 200.0, "sector": "S"},
+    ]
+    result = _compute_dividend_quality(rows, min_yield=1.0)
+    by_name = {s["name"]: s for s in result["stocks"]}
+    # Healthy payout should score higher.
+    assert by_name["Healthy"]["dq_score"] > by_name["Extreme"]["dq_score"]
+
+
+@pytest.mark.live
+def test_dividend_screen_live():
+    out = _call("dividend_screen", {"market": "america", "min_yield": 1.5, "limit": 300, "top": 30})
+    assert out.get("market") == "america"
+    assert out.get("universe", 0) > 0
+    assert "count" in out
+    assert "avg_yield" in out
+    assert "by_category" in out
+    assert set(out["by_category"].keys()) == {"Aristocrat", "Achiever", "Grower", "Payer"}
+    assert "by_sector" in out
+    stocks = out["stocks"]
+    assert isinstance(stocks, list)
+    assert len(stocks) <= 30
+    # All returned stocks must have div_yield >= min_yield.
+    for s in stocks:
+        assert s["div_yield"] >= 1.5
+    # dq_score in [0, 100] for all rows.
+    scores = [s["dq_score"] for s in stocks if s["dq_score"] is not None]
+    for sc in scores:
+        assert 0.0 <= sc <= 100.0
+    # Sorted descending by dq_score.
+    assert scores == sorted(scores, reverse=True)
+    # Required keys present.
+    for s in stocks:
+        assert "name" in s
+        assert "div_yield" in s
+        assert "years_growing" in s
+        assert "category" in s
+        assert s["category"] in {"Aristocrat", "Achiever", "Grower", "Payer"}
+
+
+@pytest.mark.live
+def test_dividend_screen_aristocrats_live():
+    out = _call("dividend_screen", {
+        "market": "america",
+        "min_yield": 2.0,
+        "min_years_growing": 25,
+        "filters": [{"field": "market_cap_basic", "op": ">", "value": 1e9}],
+        "limit": 500,
+        "top": 30,
+    })
+    assert "count" in out
+    # Every returned stock must have at least 25 years of growth.
+    for s in out["stocks"]:
+        assert s["years_growing"] >= 25
+        assert s["category"] == "Aristocrat"

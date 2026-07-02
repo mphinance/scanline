@@ -31,6 +31,33 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **Nightly 2026-07-02** Added `dividend_screen` MCP tool. Finds high-quality
+  dividend-paying stocks ranked by a composite Dividend Quality Score (`dq_score`,
+  0-100 percentile within the sample). Three components feed the score: a yield
+  component (30%, capped at 10% so distressed ultra-high yields don't monopolize
+  the top), a growth-streak component (40%, consecutive years of dividend growth
+  normalized against a 50-year cap, making it the dominant quality signal), and a
+  payout-health component (30%, a piecewise function that peaks at 1.0 in the
+  20-75% range and penalizes both very low payout -- not returning value -- and
+  very high payout -- cut risk). Stocks are labelled by category: Aristocrat
+  (25+ consecutive years of growth), Achiever (10-24 years), Grower (1-9 years),
+  or Payer (paying but no confirmed growth streak). A sector breakdown shows where
+  income opportunities are concentrated and how many Aristocrats/Achievers each
+  sector has. The `min_years_growing` parameter filters for Achievers or Aristocrats
+  directly. The `_payout_health` helper is a module-level function with clear
+  boundary semantics: 20% to 75% ideal (score 1.0), linear ramp below 20% (from
+  0.4 at 0%), linear decay above 75% (to 0.0 at 100%), and 0.0 outside [0,100].
+  Eleven offline tests cover: the payout-health boundary bands (0%, 10%, 20%,
+  50%, 75%, 100%, negative, >100%, None), the basic multi-stock quality sort
+  (Aristocrat beats Achiever beats Payer), empty rows, min_yield filter exclusion,
+  all four category assignments (including missing years_growing field = Payer),
+  missing dividend_yield_recent (silently skipped), dq_score bounds [0,100], sorted
+  descending by dq_score, sector breakdown accuracy with avg_yield and aristocrat
+  count, by_category count correctness summing to total, and payout extreme
+  comparison (200% payout scores lower than 50% at equal yield and growth). Two
+  live tests verify the tool returns valid shaped data for a broad dividend scan
+  and that `min_years_growing=25` returns only Aristocrat-category stocks. PR #14.
+
 - **Nightly 2026-07-01** Added `gap_scanner` MCP tool. Surfaces stocks that
   opened with a significant gap from the previous session's close and tracks
   how much of the gap has been filled during the session. The `gap` field
