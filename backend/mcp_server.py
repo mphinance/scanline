@@ -2125,6 +2125,242 @@ def gap_scanner(
     return result
 
 
+def _payout_health(pr: float | None) -> float:
+    """Map a payout ratio % to a health score in [0, 1].
+
+    20-75%: 1.0 (ideal: returns value without over-straining the business)
+    <20%: ramps from 0.4 at 0% to 1.0 at 20% (conservative, but ok)
+    >75%: ramps from 1.0 at 75% to 0.0 at 100% (elevated cut risk)
+    Outside [0, 100] or missing: 0.0 / 0.5 respectively (neutral for missing).
+    """
+    if pr is None or not isinstance(pr, (int, float)) or isinstance(pr, bool):
+        return 0.5
+    if pr < 0 or pr > 100:
+        return 0.0
+    if 20.0 <= pr <= 75.0:
+        return 1.0
+    if pr < 20.0:
+        return 0.4 + 0.6 * pr / 20.0
+    return max(0.0, 1.0 - (pr - 75.0) / 25.0)
+
+
+def _compute_dividend_quality(rows: list[dict], min_yield: float = 1.0) -> dict:
+    """Rank dividend-paying rows by a composite Dividend Quality Score (dq_score).
+
+    Filters to rows with dividend_yield_recent >= min_yield. For each qualifying
+    row a raw score is computed from three components:
+      yield_norm:   min(yield_pct / 10.0, 1.0)  [10%+ maps to 1.0]
+      growth_norm:  min(years_growing / 50.0, 1.0) [50+ years maps to 1.0]
+      payout_norm:  _payout_health(payout_ratio)   [piecewise, 1.0 at 20-75%]
+
+    Weights: yield 30%, growth streak 40%, payout health 30%.
+
+    raw = 0.30 * yield_norm + 0.40 * growth_norm + 0.30 * payout_norm
+
+    dq_score is the percentile rank (0-100) of raw within the qualifying set.
+    A score of 99 beats 99% of the sample on the combined quality-yield composite.
+
+    Category labels:
+      "Aristocrat"  years_growing >= 25
+      "Achiever"    years_growing >= 10
+      "Grower"      years_growing >= 1
+      "Payer"       years_growing == 0 or missing
+
+    Returns {count, avg_yield, by_category, by_sector, stocks}.
+    None-yield rows are silently skipped; rows below min_yield are excluded.
+    """
+    qualified: list[dict] = []
+    for row in rows:
+        yield_pct = row.get("dividend_yield_recent")
+        if not isinstance(yield_pct, (int, float)) or isinstance(yield_pct, bool):
+            continue
+        if yield_pct < min_yield:
+            continue
+
+        yg_raw = row.get("continuous_dividend_growth")
+        yg = int(yg_raw) if isinstance(yg_raw, (int, float)) and not isinstance(yg_raw, bool) else 0
+
+        if yg >= 25:
+            category = "Aristocrat"
+        elif yg >= 10:
+            category = "Achiever"
+        elif yg >= 1:
+            category = "Grower"
+        else:
+            category = "Payer"
+
+        yp_raw = row.get("continuous_dividend_payout")
+        pr = row.get("payout_ratio")
+
+        qualified.append({
+            "name": row.get("name"),
+            "close": row.get("close"),
+            "change": row.get("change"),
+            "sector": row.get("sector") or "Unknown",
+            "market_cap_basic": row.get("market_cap_basic"),
+            "div_yield": round(float(yield_pct), 3),
+            "years_paying": int(yp_raw) if isinstance(yp_raw, (int, float)) and not isinstance(yp_raw, bool) else None,
+            "years_growing": yg,
+            "payout_ratio": pr,
+            "roe": row.get("return_on_equity"),
+            "category": category,
+            "dq_score": None,
+            "perf_1m": row.get("Perf.1M"),
+        })
+
+    if not qualified:
+        return {
+            "count": 0,
+            "avg_yield": None,
+            "by_category": {"Aristocrat": 0, "Achiever": 0, "Grower": 0, "Payer": 0},
+            "by_sector": [],
+            "stocks": [],
+        }
+
+    # Compute raw composite score for each row.
+    raw_scores: list[float] = []
+    for q in qualified:
+        yield_norm = min(1.0, q["div_yield"] / 10.0)
+        growth_norm = min(1.0, q["years_growing"] / 50.0)
+        payout_norm = _payout_health(q["payout_ratio"])
+        raw_scores.append(0.30 * yield_norm + 0.40 * growth_norm + 0.30 * payout_norm)
+
+    # Percentile rank the raw composite to get dq_score (0-100).
+    n = len(raw_scores)
+    for i, q in enumerate(qualified):
+        raw = raw_scores[i]
+        below = sum(1 for r in raw_scores if r < raw)
+        equal = sum(1 for r in raw_scores if r == raw)
+        q["dq_score"] = round((below + 0.5 * equal) / n * 100.0, 1)
+
+    qualified.sort(key=lambda x: -(x["dq_score"] or 0.0))
+
+    # Summary stats.
+    all_yields = [q["div_yield"] for q in qualified]
+    avg_yield = round(sum(all_yields) / len(all_yields), 2) if all_yields else None
+
+    # by_category counts.
+    by_category: dict[str, int] = {"Aristocrat": 0, "Achiever": 0, "Grower": 0, "Payer": 0}
+    for q in qualified:
+        by_category[q["category"]] += 1
+
+    # by_sector aggregation.
+    sec_buckets: dict[str, dict] = {}
+    for q in qualified:
+        sec = q["sector"]
+        b = sec_buckets.setdefault(
+            sec, {"count": 0, "yields": [], "aristocrats": 0, "achievers": 0}
+        )
+        b["count"] += 1
+        b["yields"].append(q["div_yield"])
+        if q["category"] == "Aristocrat":
+            b["aristocrats"] += 1
+        elif q["category"] == "Achiever":
+            b["achievers"] += 1
+
+    by_sector = sorted(
+        [
+            {
+                "sector": sec,
+                "count": b["count"],
+                "avg_yield": round(sum(b["yields"]) / len(b["yields"]), 2),
+                "aristocrats": b["aristocrats"],
+                "achievers": b["achievers"],
+            }
+            for sec, b in sec_buckets.items()
+        ],
+        key=lambda s: -s["count"],
+    )
+
+    return {
+        "count": len(qualified),
+        "avg_yield": avg_yield,
+        "by_category": by_category,
+        "by_sector": by_sector,
+        "stocks": qualified,
+    }
+
+
+@mcp.tool
+def dividend_screen(
+    market: str = "america",
+    min_yield: float = 1.0,
+    min_years_growing: int = 0,
+    filters: list[dict] | None = None,
+    limit: int = 500,
+    top: int = 50,
+) -> dict:
+    """Find high-quality dividend-paying stocks ranked by a Dividend Quality Score.
+
+    Surfaces income ideas with a composite score (dq_score, 0-100) that weights
+    three things simultaneously: how high the yield is, how long the dividend has
+    grown consecutively (quality and reliability signal), and whether the payout
+    ratio is in a healthy range (not so low it risks being cut, not so high it
+    strains the balance sheet).
+
+    Score components:
+      yield component   30%: yield up to 10% maps to full credit
+      growth streak     40%: consecutive years of dividend growth / 50 (capped)
+      payout health     30%: ideal 20-75%, penalized outside that band
+    dq_score is the percentile rank (0-100) of the raw composite in the sample.
+
+    Category labels (based on consecutive years of dividend growth):
+      Aristocrat   25+ consecutive years of growth (S&P Dividend Aristocrat tier)
+      Achiever     10-24 years
+      Grower       1-9 years
+      Payer        paying dividends but no confirmed growth streak
+
+    market:          one of list_markets() ids (america works best; fundmental data
+                     is sparse for crypto/forex/futures).
+    min_yield:       minimum dividend yield % to qualify (default 1.0).
+    min_years_growing: return only stocks with at least this many consecutive years
+                     of dividend growth (0 = all payers; 10 = Achievers+; 25 = Aristocrats).
+    filters:         optional extra filters (e.g. market_cap_basic > 1e9).
+    limit:           rows to sample (default 500).
+    top:             max stocks to return (default 50).
+
+    Returns {market, universe, sample, min_yield, count, avg_yield,
+    by_category:{Aristocrat, Achiever, Grower, Payer},
+    by_sector:[{sector, count, avg_yield, aristocrats, achievers}],
+    stocks:[{name, close, change, sector, market_cap_basic, div_yield,
+    years_paying, years_growing, payout_ratio, roe, category, dq_score, perf_1m}]}.
+    """
+    base_filters = [Filter(**f) for f in (filters or [])]
+    base_filters.append(
+        Filter(field="dividend_yield_recent", op=">", value=max(0.0, min_yield))
+    )
+    req = ScreenRequest(
+        market=market,
+        filters=base_filters,
+        columns=[
+            "name", "close", "change", "sector", "market_cap_basic",
+            "dividend_yield_recent", "continuous_dividend_payout",
+            "continuous_dividend_growth", "payout_ratio",
+            "return_on_equity", "Perf.1M",
+        ],
+        sort=[SortKey(field="dividend_yield_recent", dir="desc")],
+        limit=max(1, min(limit, 2000)),
+    )
+    resp = run_screen(req)
+    if resp["meta"].get("error"):
+        _STATS["errors"] += 1
+        return {"error": resp["meta"]["error"]}
+
+    result = _compute_dividend_quality(resp["rows"], min_yield=min_yield)
+
+    if min_years_growing > 0:
+        result["stocks"] = [
+            s for s in result["stocks"] if s["years_growing"] >= min_years_growing
+        ]
+
+    result["stocks"] = result["stocks"][:max(1, top)]
+    result["universe"] = resp["count"]
+    result["market"] = market
+    result["min_yield"] = min_yield
+    result["sample"] = len(resp["rows"])
+    return result
+
+
 # ----------------------------------------------------------------------------
 # Prompts: canned, modern screening workflows the model can launch
 # ----------------------------------------------------------------------------
