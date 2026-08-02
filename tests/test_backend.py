@@ -538,6 +538,67 @@ def test_query_columns_excludes_stat_sort_fields():
     assert "RSI" in cols
 
 
+# --- CLI host and port resolution ----------------------------------------
+#
+# The loopback default is a promise the docstring, the README, and STATUS all
+# make. These pin it, because the failure mode is silent: a host that resolves
+# to "" makes uvicorn bind INADDR_ANY, which looks fine until the screener is
+# answering the whole network.
+
+def test_cli_host_defaults_to_loopback(monkeypatch):
+    from backend.cli import DEFAULT_HOST, parse_args
+
+    monkeypatch.delenv("SCANLINE_HOST", raising=False)
+    assert parse_args([]).host == DEFAULT_HOST
+
+
+def test_cli_empty_env_host_does_not_bind_all_interfaces(monkeypatch):
+    from backend.cli import DEFAULT_HOST, parse_args
+
+    # Set but empty, which is what a compose `SCANLINE_HOST=` entry or a bare
+    # line in a .env produces. os.environ.get(name, default) returns "" here,
+    # not the default.
+    monkeypatch.setenv("SCANLINE_HOST", "")
+    assert parse_args([]).host == DEFAULT_HOST
+
+    monkeypatch.setenv("SCANLINE_HOST", "   ")
+    assert parse_args([]).host == DEFAULT_HOST
+
+
+def test_cli_empty_host_flag_does_not_bind_all_interfaces(monkeypatch):
+    from backend.cli import DEFAULT_HOST, parse_args
+
+    monkeypatch.delenv("SCANLINE_HOST", raising=False)
+    assert parse_args(["--host", ""]).host == DEFAULT_HOST
+    assert parse_args(["--host", "  "]).host == DEFAULT_HOST
+
+
+def test_cli_host_precedence_flag_over_env(monkeypatch):
+    from backend.cli import parse_args
+
+    monkeypatch.setenv("SCANLINE_HOST", "10.0.0.1")
+    assert parse_args([]).host == "10.0.0.1"
+    assert parse_args(["--host", "0.0.0.0"]).host == "0.0.0.0"
+    # Whitespace around a real value is stripped, not passed to bind().
+    monkeypatch.setenv("SCANLINE_HOST", "  0.0.0.0  ")
+    assert parse_args([]).host == "0.0.0.0"
+
+
+def test_cli_port_precedence_and_junk(monkeypatch):
+    from backend.cli import DEFAULT_PORT, parse_args
+
+    monkeypatch.delenv("SCANLINE_PORT", raising=False)
+    assert parse_args([]).port == DEFAULT_PORT
+
+    monkeypatch.setenv("SCANLINE_PORT", "9000")
+    assert parse_args([]).port == 9000
+    assert parse_args(["--port", "9100"]).port == 9100
+
+    for junk in ("", "   ", "not-a-port"):
+        monkeypatch.setenv("SCANLINE_PORT", junk)
+        assert parse_args([]).port == DEFAULT_PORT
+
+
 # --- live API tests ------------------------------------------------------
 
 @pytest.mark.live

@@ -1,10 +1,14 @@
 # Scanline in a container. Build and run:
 #
 #   docker build -t scanline .
-#   docker run --rm -p 8000:8000 scanline
+#   docker run --rm -p 127.0.0.1:8000:8000 scanline
 #
 # Then open http://127.0.0.1:8000/. Nothing to configure, no account, no key:
 # the upstream data source needs no auth.
+#
+# The publish is deliberately loopback-scoped, matching docker-compose.yml and
+# the loopback default everywhere else. A bare `-p 8000:8000` would put the
+# screener on every host interface, and the API allows all CORS origins.
 
 FROM python:3.12-slim
 
@@ -40,7 +44,10 @@ USER scanline
 EXPOSE 8000
 
 # No curl in the slim image, so check with the interpreter that is already here.
+# Reads SCANLINE_PORT rather than hardcoding 8000: overriding the port used to
+# leave a perfectly healthy container reporting unhealthy, which breaks
+# `depends_on: condition: service_healthy` and shows red in `compose ps`.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"
+    CMD python -c "import os,urllib.request,sys; p=os.environ.get('SCANLINE_PORT','8000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{p}/api/health', timeout=4).status == 200 else 1)"
 
 CMD ["scanline"]
