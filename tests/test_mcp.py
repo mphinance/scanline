@@ -26,11 +26,32 @@ from backend.mcp_server import (
     _compute_relative_strength,
     _compute_sector_rotation,
     _compute_volume_leaders,
+    _otc_guard,
     _payout_health,
     mcp,
     normalize_interval,
     rating_label,
 )
+
+# Every america tool that scans a broad universe and must therefore exclude OTC
+# by default. Adding a new one without the guard should fail the test below, the
+# same way a new unprotected preset fails test_every_unprotected_america_preset_
+# is_guarded in test_backend.py.
+OTC_GUARDED_TOOLS = [
+    "run_factor_preset",
+    "sector_breakdown",
+    "market_breadth",
+    "sector_rotation",
+    "new_highs_lows",
+    "volume_leaders",
+    "top_movers",
+    "momentum_consistency",
+    "relative_strength_leaders",
+    "ema_stack_scan",
+    "earnings_radar",
+    "gap_scanner",
+    "dividend_screen",
+]
 
 
 def _call(name: str, args: dict | None = None):
@@ -172,6 +193,72 @@ def test_run_preset_unknown_id():
 def test_run_factor_preset_unknown_id():
     out = _call("run_factor_preset", {"factor_preset_id": "does_not_exist"})
     assert "error" in out
+
+
+# --- OTC guard on the tools (offline) ------------------------------------
+
+def test_otc_guard_appends_the_exclusion_on_america():
+    out, guard = _otc_guard("america", [], False)
+    assert out == [{"field": "exchange", "op": "not_in", "value": ["OTC"]}]
+    assert guard["active"] is True
+
+
+def test_otc_guard_preserves_caller_filters():
+    mine = [{"field": "market_cap_basic", "op": ">", "value": 1e9}]
+    out, _ = _otc_guard("america", mine, False)
+    assert out[0] == mine[0], "the caller's own filter must survive"
+    assert len(out) == 2
+
+
+def test_otc_guard_does_not_mutate_the_caller_list():
+    mine = [{"field": "close", "op": ">", "value": 5}]
+    out, _ = _otc_guard("america", mine, False)
+    assert len(mine) == 1, "the caller's list was mutated in place"
+    assert out is not mine
+
+
+def test_otc_guard_lifted_by_include_otc():
+    out, guard = _otc_guard("america", [], True)
+    assert out == []
+    assert guard["active"] is False
+
+
+def test_otc_guard_skipped_off_america():
+    # `exchange` carries US venue names. The condition is meaningless in crypto
+    # and would silently return nothing there.
+    for market in ("crypto", "forex", "futures", "bond", "cfd"):
+        out, guard = _otc_guard(market, [], False)
+        assert out == [], market
+        assert guard is None, market
+
+
+def test_otc_guard_defers_to_a_caller_supplied_exchange_filter():
+    # Someone asking for OTC explicitly has already said what they want.
+    mine = [{"field": "exchange", "op": "==", "value": "OTC"}]
+    out, guard = _otc_guard("america", mine, False)
+    assert out == mine
+    assert guard["active"] is False
+
+
+def test_every_broad_america_tool_takes_include_otc():
+    """The point of the guard: a new broad scan must not arrive unguarded.
+
+    top_movers and gap_scanner were measured at 100% OTC on every list they
+    returned, because both rank on a percentage move and a sub-penny tick is a
+    four figure percentage. Any future tool that scans the america universe has
+    the same exposure, so the parameter is the thing to enforce.
+    """
+    import inspect
+
+    from backend import mcp_server
+
+    for name in OTC_GUARDED_TOOLS:
+        fn = getattr(mcp_server, name)
+        params = inspect.signature(fn).parameters
+        assert "include_otc" in params, f"{name} has no include_otc parameter"
+        assert params["include_otc"].default is False, (
+            f"{name} must exclude OTC by default"
+        )
 
 
 def test_unavailable_presets_are_refused_with_a_reason():
@@ -1707,6 +1794,99 @@ def test_compute_gap_scanner_missing_gap_field():
     result = _compute_gap_scanner(rows, min_gap_pct=1.0)
     assert result["count"] == 1
     assert result["gap_up"][0]["name"] == "HasGap"
+
+
+@pytest.mark.live
+def test_broad_america_tools_return_no_otc_by_default():
+    """The guard has to actually reach the rows, not just the query.
+
+    Measured unguarded: top_movers 10/10 OTC on both lists, gap_scanner 50/50
+    on both. Those two rank on change and gap, which a sub-penny shell wins by
+    construction, so they are the sharpest test that the guard is live.
+    """
+    from backend.models import ScreenRequest
+    from backend.pipeline import run_screen
+
+    resp = run_screen(ScreenRequest(
+        market="america", columns=["name", "exchange"],
+        filters=[{"field": "exchange", "op": "==", "value": "OTC"}], limit=5000,
+    ))
+    assert not resp["meta"].get("error"), resp["meta"]["error"]
+    otc = {r["name"] for r in resp["rows"]}
+    assert otc, "could not build an OTC ticker set, the check would be vacuous"
+
+    lists = {
+        "top_movers.gainers": _call("top_movers")["gainers"],
+        "top_movers.losers": _call("top_movers")["losers"],
+        "gap_scanner.gap_up": _call("gap_scanner")["gap_up"],
+        "gap_scanner.gap_down": _call("gap_scanner")["gap_down"],
+    }
+    for label, rows in lists.items():
+        assert rows, f"{label} came back empty"
+        hits = [r["name"] for r in rows if r["name"] in otc]
+        assert not hits, f"{label} returned OTC rows despite the guard: {hits[:5]}"
+
+
+@pytest.mark.live
+def test_include_otc_actually_lifts_the_guard():
+    # The escape hatch has to work, otherwise the guard is a silent cap rather
+    # than a default. OTC dominates the change ranking, so lifting it shows up
+    # immediately.
+    guarded = _call("top_movers")["gainers"]
+    lifted = _call("top_movers", {"include_otc": True})["gainers"]
+    assert guarded and lifted
+    assert [r["name"] for r in guarded] != [r["name"] for r in lifted]
+    assert guarded[0]["change"] < lifted[0]["change"]
+
+
+@pytest.mark.live
+def test_a_trivially_true_filter_does_not_change_the_universe():
+    """Query.where() ASSIGNS query['filter'], it does not append.
+
+    stocks('america') ships is_primary == true in that slot, so adding any
+    condition of our own used to wipe it out and readmit every non-primary
+    listing: close > -1e12 took america from 7,648 rows to 13,374. Every preset
+    and every filtered tool was therefore scanning a different and much dirtier
+    universe than the unfiltered default view, which is also where a good share
+    of the OTC junk came from.
+    """
+    from backend.models import ScreenRequest
+    from backend.pipeline import run_screen
+
+    def count(filters):
+        r = run_screen(ScreenRequest(market="america", columns=["name"],
+                                     filters=filters, limit=1))
+        assert not r["meta"].get("error"), r["meta"]["error"]
+        return r["count"]
+
+    bare = count([])
+    trivial = count([{"field": "close", "op": ">", "value": -1e12}])
+    assert trivial == bare, (
+        f"a trivially true filter changed the universe from {bare} to {trivial}, "
+        f"so the market's own constraints are being overwritten again"
+    )
+
+
+@pytest.mark.live
+def test_match_any_keeps_the_market_constraints_too():
+    # where2() assigns query['filter2'], which carries the instrument type
+    # constraints, so the match="any" path needs the same composition.
+    from backend.models import ScreenRequest
+    from backend.pipeline import run_screen
+
+    def count(filters, match="all"):
+        r = run_screen(ScreenRequest(market="america", columns=["name"],
+                                     filters=filters, match=match, limit=1))
+        assert not r["meta"].get("error"), r["meta"]["error"]
+        return r["count"]
+
+    lo = [{"field": "RSI", "op": "<", "value": 30}]
+    hi = [{"field": "RSI", "op": ">", "value": 70}]
+    both = count(lo + hi, match="any")
+    # Disjoint conditions, so the OR is exactly the sum, and all three are
+    # bounded by the same primary-listing universe.
+    assert both == count(lo) + count(hi)
+    assert both <= count([])
 
 
 @pytest.mark.live

@@ -100,6 +100,21 @@ resources. The centerpiece is `analyze`, a multi-timeframe chart read (RSI and
 MACD bias on the 1h/4h/1d/1w/1m at once). Full reference and config in
 `docs/MCP.md`.
 
+Every tool that scans a broad `america` universe excludes OTC by default, via
+`_otc_guard` in `backend/mcp_server.py` and `NO_OTC` in `backend/presets.py`.
+It is a data quality filter with no market cap or price floor: sub-penny shells
+post four figure percentage moves, so anything ranking on change or gap returns
+those and nothing else. Lift it per call with `include_otc=True`. `screen` is
+deliberately exempt, being the raw escape hatch. A test enforces that any new
+broad america tool takes the parameter.
+
+One thing to know before touching `backend/screener.py`: `Query.where()` and
+`Query.where2()` in `tradingview-screener` ASSIGN their slot rather than append,
+and the market helpers (`stocks('america')` and friends) ship the constraints
+that define the market in exactly those slots. `run_query` composes with them on
+purpose. Calling `.where(*conds)` directly drops `is_primary` and nearly doubles
+the universe.
+
 Register it (Claude Desktop `claude_desktop_config.json`, or a project
 `.mcp.json` for Claude Code):
 

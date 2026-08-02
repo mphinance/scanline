@@ -43,7 +43,7 @@ from .models import (
     Stat,
 )
 from .pipeline import run_screen
-from .presets import FACTOR_PRESETS, PRESETS
+from .presets import FACTOR_PRESETS, NO_OTC, PRESETS
 from .screener import MARKETS
 
 mcp = FastMCP("scanline")
@@ -155,6 +155,77 @@ def _unavailable(ticker: str, err: str) -> dict:
         "note": ("This is NOT a statement that the symbol does not exist. The screen "
                  "itself failed. Retry, or confirm the name from another source before "
                  "concluding anything about it."),
+    }
+
+
+# ----------------------------------------------------------------------------
+# OTC guard for the market study tools
+#
+# presets.py guards the preset scans. The tools ran unguarded, and the two that
+# rank by percentage move were made entirely of the junk the preset guard exists
+# to remove. Measured 2026-08-02 against the america universe:
+#
+#   top_movers   gainers 10/10 OTC, losers 10/10 OTC
+#   gap_scanner  gap_up 50/50 OTC, gap_down 50/50 OTC
+#
+# That is not a coincidence of the sample. A sub-penny shell that ticks one
+# hundredth of a cent posts a four figure percentage move, so anything sorting
+# on change or gap descending returns those rows and only those rows. The top
+# gap up was MFDB at +334900%.
+#
+# Tools that rank on volume, relative strength, EMA stacking or a factor score
+# measured 0% OTC even unguarded, and so did the breadth percentages: those
+# tools sample in the market's default market-cap order, which does not reach
+# the shells at ordinary limits. They are guarded anyway, for three reasons that
+# are smaller but real. Their reported `universe` counted rows they would never
+# have sampled (7,648 rather than 5,182). Raising `limit`, or passing filters
+# that reorder the sample, walks straight into the same rows top_movers was
+# built entirely from. And a factor blend is z-scored ACROSS the returned set,
+# so one absurd reading moves the mean and standard deviation and therefore
+# every other row's score, whether or not the shell itself surfaces.
+#
+# Same shape as the preset guard, deliberately: exchange exclusion only, no
+# market cap and no share price floor, so a $2 NASDAQ small cap still comes
+# back. Lift it per call with include_otc=True.
+# ----------------------------------------------------------------------------
+def _otc_guard(
+    market: str, filters: list[dict] | None, include_otc: bool
+) -> tuple[list[dict], dict | None]:
+    """Return (filters, guard_block) with the OTC exclusion applied.
+
+    Only for america. `exchange` carries US venue names, so the condition is
+    meaningless in crypto, forex, futures, bond and cfd, and is skipped there.
+
+    A caller who filters on `exchange` themselves is left alone. They have
+    already said what they want from the venue and we should not second guess
+    it.
+
+    Every tool using this passes match "all", so the appended condition
+    RESTRICTS the result. It would WIDEN it under match "any", which is why
+    `screen` is deliberately NOT guarded: it is the raw escape hatch, it takes
+    a caller-supplied match, and its filters are entirely the caller's.
+    """
+    raw = [dict(f) for f in (filters or [])]
+    if market != "america":
+        return raw, None
+    if include_otc:
+        return raw, {
+            "active": False,
+            "note": "OTC guard lifted by include_otc=True. Expect sub-penny shells "
+                    "whose percentage moves are a fraction of a cent expressed as "
+                    "a percentage.",
+        }
+    if any(f.get("field") == "exchange" for f in raw):
+        return raw, {
+            "active": False,
+            "note": "OTC guard skipped: the caller supplied their own exchange filter.",
+        }
+    return [*raw, dict(NO_OTC)], {
+        "active": True,
+        "excluded_venue": "OTC",
+        "note": "OTC excluded as a data quality filter. No market cap or share "
+                "price floor is applied, so listed small caps still come back. "
+                "Pass include_otc=True to scan the full venue.",
     }
 
 
@@ -472,6 +543,7 @@ def run_factor_preset(
     filters: list[dict] | None = None,
     columns: list[str] | None = None,
     limit: int = 50,
+    include_otc: bool = False,
 ) -> dict:
     """Rank a market by a named composite factor (see list_factor_presets).
 
@@ -479,18 +551,27 @@ def run_factor_preset(
     "factor_score" column, and ranks by it. Narrow the universe first with
     `filters` (recommended, e.g. a market-cap floor) so the ranking is over a
     meaningful set.
+
+    On america, OTC is excluded by default. The blend is z-scored ACROSS the
+    returned rows, so this is not only about which names surface: a shell with
+    an absurd reading moves the mean and the standard deviation, and therefore
+    every other row's score. Pass include_otc=True to scan the full venue.
     """
     fp = next((f for f in FACTOR_PRESETS if f["id"] == factor_preset_id), None)
     if fp is None:
         return {"error": f"Unknown factor preset: {factor_preset_id}. See list_factor_presets()."}
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=columns or [],
         factor=Factor(weights=[FactorWeight(**w) for w in fp["weights"]]),
         limit=limit,
     )
-    return _run(req, table_rows=min(limit, 50))
+    out = _run(req, table_rows=min(limit, 50))
+    if guard and "error" not in out:
+        out["otc_guard"] = guard
+    return out
 
 
 @mcp.tool
@@ -893,16 +974,28 @@ def chart(ticker: str, market: str = "america", interval: str = "1d", theme: str
 
 
 @mcp.tool
-def sector_breakdown(market: str = "america", filters: list[dict] | None = None, limit: int = 500) -> dict:
+def sector_breakdown(
+    market: str = "america",
+    filters: list[dict] | None = None,
+    limit: int = 500,
+    include_otc: bool = False,
+) -> dict:
     """Aggregate a screen by sector: count, average change, and total market cap.
 
     A bird's-eye read of where the money and the moves are right now. Aggregates
     over the returned set (apply `filters` to scope it, e.g. a market-cap floor).
     Returns sectors sorted by total market cap.
+
+    On america, OTC is excluded by default as a data quality filter, since a
+    third of the universe is sub-penny shells whose changes are a fraction of a
+    cent expressed as a percentage. No market cap or price floor is applied.
+    Pass include_otc=True to scan the full venue. The response carries an
+    `otc_guard` block so the exclusion is never silent.
     """
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=["name", "sector", "change", "market_cap_basic"],
         limit=limit,
     )
@@ -929,7 +1022,10 @@ def sector_breakdown(market: str = "america", filters: list[dict] | None = None,
             "total_market_cap": round(b["mcap"], 0),
         })
     sectors.sort(key=lambda s: s["total_market_cap"], reverse=True)
-    return {"sampled": len(resp["rows"]), "universe": resp["count"], "sectors": sectors}
+    out = {"sampled": len(resp["rows"]), "universe": resp["count"], "sectors": sectors}
+    if guard:
+        out["otc_guard"] = guard
+    return out
 
 
 def _compute_breadth(rows: list[dict]) -> dict:
@@ -995,6 +1091,7 @@ def market_breadth(
     market: str = "america",
     filters: list[dict] | None = None,
     limit: int = 500,
+    include_otc: bool = False,
 ) -> dict:
     """Market breadth indicators: advancers/decliners, % above key MAs, RSI distribution.
 
@@ -1005,14 +1102,19 @@ def market_breadth(
     market:  one of list_markets() ids.
     filters: optional extra filters, e.g. a market-cap floor to focus on a tier.
     limit:   rows to sample (default 500; the full scan is often 7000+ stocks).
+    include_otc: scan OTC too (default False). Breadth is a PERCENTAGE over the
+                 universe, so this matters more here than in a top-N list: a
+                 third of america is sub-penny shells, and letting them vote
+                 moves every ratio this tool reports.
 
     Returns {market, universe, sample, advancers, decliners, unchanged, ad_ratio,
     pct_advancers, pct_decliners, avg_change, pct_above_sma50, pct_above_sma200,
-    avg_rsi, pct_rsi_overbought, pct_rsi_oversold, pct_rsi_neutral}.
+    avg_rsi, pct_rsi_overbought, pct_rsi_oversold, pct_rsi_neutral, otc_guard}.
     """
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=["name", "close", "change", "RSI", "SMA50", "SMA200"],
         limit=max(1, min(limit, 2000)),
     )
@@ -1023,6 +1125,8 @@ def market_breadth(
     breadth = _compute_breadth(resp["rows"])
     breadth["universe"] = resp["count"]
     breadth["market"] = market
+    if guard:
+        breadth["otc_guard"] = guard
     return breadth
 
 
@@ -1109,6 +1213,7 @@ def sector_rotation(
     market: str = "america",
     filters: list[dict] | None = None,
     limit: int = 1000,
+    include_otc: bool = False,
 ) -> dict:
     """Rank sectors by multi-timeframe momentum: a sector rotation dashboard.
 
@@ -1128,12 +1233,15 @@ def sector_rotation(
     market:  one of list_markets() ids.
     filters: optional extra filters (e.g. a market-cap floor).
     limit:   stocks to sample (default 1000; spread across all sectors).
+    include_otc: scan OTC too (default False). Sector averages are computed over
+                 the sample, so shells drag whichever sector they land in.
 
-    Returns {market, sampled, universe, sectors:[...]}.
+    Returns {market, sampled, universe, sectors:[...], otc_guard}.
     """
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=["name", "sector", "change", "Perf.1M", "Perf.YTD", "RSI", "market_cap_basic"],
         limit=max(1, min(limit, 2000)),
     )
@@ -1142,12 +1250,15 @@ def sector_rotation(
         _STATS["errors"] += 1
         return {"error": resp["meta"]["error"]}
     sectors = _compute_sector_rotation(resp["rows"])
-    return {
+    out = {
         "market": market,
         "sampled": len(resp["rows"]),
         "universe": resp["count"],
         "sectors": sectors,
     }
+    if guard:
+        out["otc_guard"] = guard
+    return out
 
 
 def _compute_new_highs_lows(rows: list[dict], threshold: float = 0.02) -> dict:
@@ -1218,6 +1329,7 @@ def new_highs_lows(
     filters: list[dict] | None = None,
     threshold: float = 0.02,
     limit: int = 500,
+    include_otc: bool = False,
 ) -> dict:
     """Stocks at or near their 52-week highs and lows: a classic breadth gauge.
 
@@ -1231,15 +1343,18 @@ def new_highs_lows(
     threshold: fractional distance from the 52w extreme to count as "at" the
                level. Default 0.02 = within 2%. Use 0.05 for "near highs/lows".
     limit:     rows to sample (default 500).
+    include_otc: scan OTC too (default False). This is a breadth gauge reported
+               as counts and percentages, so shells vote on the reading.
 
     Returns {market, universe, sample, new_highs_count, new_lows_count,
     nh_nl_ratio, nh_nl_diff, pct_new_highs, pct_new_lows,
     new_highs:[{name,close,high_52w,pct_from_high,change,sector}],
-    new_lows:[{name,close,low_52w,pct_from_low,change,sector}]}.
+    new_lows:[{name,close,low_52w,pct_from_low,change,sector}], otc_guard}.
     """
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=["name", "close", "change", "price_52_week_high", "price_52_week_low", "sector"],
         limit=max(1, min(limit, 2000)),
     )
@@ -1250,6 +1365,8 @@ def new_highs_lows(
     result = _compute_new_highs_lows(resp["rows"], threshold=threshold)
     result["universe"] = resp["count"]
     result["market"] = market
+    if guard:
+        result["otc_guard"] = guard
     return result
 
 
@@ -1344,6 +1461,7 @@ def volume_leaders(
     filters: list[dict] | None = None,
     limit: int = 500,
     top: int = 50,
+    include_otc: bool = False,
 ) -> dict:
     """Stocks with unusual volume right now, classified by price direction.
 
@@ -1359,14 +1477,16 @@ def volume_leaders(
     filters:  optional extra filters (e.g. a market-cap floor).
     limit:    rows to sample (default 500). Raise to 2000 for broader coverage.
     top:      max leaders to return (default 50).
+    include_otc: scan OTC too (default False).
 
     Returns {market, universe, sample, count, min_rvol, by_direction,
     by_sector:[{sector,count,avg_rvol,up,down}],
-    leaders:[{name,close,change,rvol,volume,sector,direction}]}.
+    leaders:[{name,close,change,rvol,volume,sector,direction}], otc_guard}.
     """
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=["name", "close", "change", "volume", "relative_volume_10d_calc", "sector"],
         limit=max(1, min(limit, 2000)),
     )
@@ -1378,6 +1498,8 @@ def volume_leaders(
     result["leaders"] = result["leaders"][:top]
     result["universe"] = resp["count"]
     result["market"] = market
+    if guard:
+        result["otc_guard"] = guard
     return result
 
 
@@ -1387,6 +1509,7 @@ def top_movers(
     n: int = 10,
     filters: list[dict] | None = None,
     columns: list[str] | None = None,
+    include_otc: bool = False,
 ) -> dict:
     """Get the top N gainers and top N losers in any market right now.
 
@@ -1394,15 +1517,23 @@ def top_movers(
     separate ranked lists in one call: stocks sorted by change% descending
     (gainers) and ascending (losers), both filtered the same way.
 
+    On america, OTC is excluded by default. This tool ranks purely on change%,
+    which is the metric a sub-penny shell wins by construction: a $0.0001 tick
+    is a four figure percentage move. Measured unguarded, both lists came back
+    10 of 10 OTC, so the tool was not reporting the day's movers, it was
+    reporting rounding. No market cap or price floor is applied, so listed small
+    caps still surface. Pass include_otc=True to scan the full venue.
+
     market:  one of list_markets() ids (america, crypto, forex, ...).
     n:       movers to show on each side, 1-50 (default 10).
     filters: optional extra filters applied to both lists, e.g. a market_cap
              floor: [{"field":"market_cap_basic","op":">","value":1e9}].
     columns: fields to include. Defaults to name, description, close, change,
              volume, market_cap_basic, sector.
+    include_otc: scan OTC too (default False).
 
     Returns {market, universe, gainers:[rows], losers:[rows],
-    gainers_table, losers_table}.
+    gainers_table, losers_table, otc_guard}.
     """
     default_cols = ["name", "description", "close", "change", "volume", "market_cap_basic", "sector"]
     cols = [c for c in (columns or default_cols) if validate_field(c)]
@@ -1410,7 +1541,8 @@ def top_movers(
     if "change" not in cols:
         cols.insert(1, "change")
     n_capped = max(1, min(n, 50))
-    base_filters = [Filter(**f) for f in (filters or [])]
+    guarded, guard = _otc_guard(market, filters, include_otc)
+    base_filters = [Filter(**f) for f in guarded]
 
     gainers_req = ScreenRequest(
         market=market,
@@ -1434,7 +1566,7 @@ def top_movers(
     if losers_out.get("error"):
         return losers_out
 
-    return {
+    out = {
         "market": market,
         "universe": gainers_out.get("count", 0),
         "gainers": gainers_out.get("rows", []),
@@ -1442,6 +1574,9 @@ def top_movers(
         "gainers_table": gainers_out.get("table", ""),
         "losers_table": losers_out.get("table", ""),
     }
+    if guard:
+        out["otc_guard"] = guard
+    return out
 
 
 # Five timeframes checked for momentum consistency.
@@ -1520,6 +1655,7 @@ def momentum_consistency(
     filters: list[dict] | None = None,
     limit: int = 500,
     top: int = 50,
+    include_otc: bool = False,
 ) -> dict:
     """Rank stocks by how consistently their returns align across five time frames.
 
@@ -1547,9 +1683,10 @@ def momentum_consistency(
     timeframes_total, positive_tf, negative_tf, perf_1w, perf_1m,
     perf_3m, perf_ytd}]}.
     """
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=[
             "name", "close", "change", "sector", "market_cap_basic",
             "Perf.W", "Perf.1M", "Perf.3M", "Perf.YTD",
@@ -1567,13 +1704,16 @@ def momentum_consistency(
         scored = [s for s in scored if s["timeframes_aligned"] >= min_aligned]
 
     top_rows = scored[:max(1, top)]
-    return {
+    out = {
         "market": market,
         "universe": resp["count"],
         "sample": len(resp["rows"]),
         "direction": direction,
         "top": top_rows,
     }
+    if guard:
+        out["otc_guard"] = guard
+    return out
 
 
 # Timeframe config for the relative-strength calculation.
@@ -1686,6 +1826,7 @@ def relative_strength_leaders(
     filters: list[dict] | None = None,
     limit: int = 500,
     top: int = 50,
+    include_otc: bool = False,
 ) -> dict:
     """Find stocks outperforming their sector peers: sector-relative strength leaders.
 
@@ -1709,14 +1850,16 @@ def relative_strength_leaders(
     filters: optional extra filters (e.g. a market-cap floor).
     limit:   rows to sample (default 500; more coverage = more reliable sector avgs).
     top:     max stocks to return (default 50).
+    include_otc: scan OTC too (default False).
 
     Returns {market, universe, sample, top:[{name, close, change, sector,
     market_cap_basic, rs_score, excess_1d, excess_1m, excess_ytd,
     sector_avg_change, perf_1m, perf_ytd}]}.
     """
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=[
             "name", "close", "change", "sector", "market_cap_basic",
             "Perf.1M", "Perf.YTD",
@@ -1730,12 +1873,15 @@ def relative_strength_leaders(
 
     scored = _compute_relative_strength(resp["rows"])
     top_rows = scored[:max(1, top)]
-    return {
+    out = {
         "market": market,
         "universe": resp["count"],
         "sample": len(resp["rows"]),
         "top": top_rows,
     }
+    if guard:
+        out["otc_guard"] = guard
+    return out
 
 
 # Four MA-alignment conditions that define the EMA stack.
@@ -1827,6 +1973,7 @@ def ema_stack_scan(
     filters: list[dict] | None = None,
     limit: int = 500,
     top: int = 50,
+    include_otc: bool = False,
 ) -> dict:
     """Rank stocks by EMA/SMA stack alignment: a bull-stack breadth indicator.
 
@@ -1853,6 +2000,7 @@ def ema_stack_scan(
     filters:   optional extra filters (e.g. a market-cap floor).
     limit:     rows to sample (default 500).
     top:       max stocks to return (default 50).
+    include_otc: scan OTC too (default False).
 
     Returns {market, universe, sample,
     distribution:{0:n, 1:n, 2:n, 3:n, 4:n, none:n},
@@ -1861,9 +2009,10 @@ def ema_stack_scan(
     stack_score, ma_alignment, conditions_available,
     price_vs_ema8, ema8_vs_ema21, ema21_vs_sma50, sma50_vs_sma200}]}.
     """
+    guarded, guard = _otc_guard(market, filters, include_otc)
     req = ScreenRequest(
         market=market,
-        filters=[Filter(**f) for f in (filters or [])],
+        filters=[Filter(**f) for f in guarded],
         columns=[
             "name", "close", "change", "sector", "market_cap_basic",
             "RSI", "EMA8", "EMA21", "SMA50", "SMA200",
@@ -1899,7 +2048,7 @@ def ema_stack_scan(
     else:
         filtered = scored
 
-    return {
+    out = {
         "market": market,
         "universe": resp["count"],
         "sample": len(resp["rows"]),
@@ -1909,6 +2058,9 @@ def ema_stack_scan(
         "pct_full_bear": pct_full_bear,
         "top": filtered[:max(1, top)],
     }
+    if guard:
+        out["otc_guard"] = guard
+    return out
 
 
 def _market_tz() -> dt.tzinfo | None:
@@ -2044,6 +2196,7 @@ def earnings_radar(
     filters: list[dict] | None = None,
     limit: int = 1000,
     top: int = 50,
+    include_otc: bool = False,
 ) -> dict:
     """Find stocks with earnings announcements in the next N days.
 
@@ -2072,7 +2225,8 @@ def earnings_radar(
     stocks:[{name,close,change,sector,market_cap_basic,days_to_earnings,
     bucket,rsi,atrp,perf_1m}]}.
     """
-    base_filters = [Filter(**f) for f in (filters or [])]
+    guarded, guard = _otc_guard(market, filters, include_otc)
+    base_filters = [Filter(**f) for f in guarded]
     # Window on earnings_release_next_date, not days_to_earnings: the latter
     # validates against the catalog but is null for every US row, so the old
     # filter matched nothing and the tool reported an empty universe with no
@@ -2106,6 +2260,8 @@ def earnings_radar(
     result["market"] = market
     result["horizon_days"] = horizon
     result["sample"] = len(resp["rows"])
+    if guard:
+        result["otc_guard"] = guard
     return result
 
 
@@ -2224,6 +2380,7 @@ def gap_scanner(
     filters: list[dict] | None = None,
     limit: int = 500,
     top: int = 50,
+    include_otc: bool = False,
 ) -> dict:
     """Find stocks that opened with a significant gap and track intraday fill progress.
 
@@ -2263,7 +2420,8 @@ def gap_scanner(
     # "nothing gapped down today" on a session where 210 of 1000 sampled rows had
     # gapped down 1% or more. The limit is split so the total sampled still
     # matches what `limit` advertises.
-    base = [Filter(**f) for f in (filters or [])]
+    guarded, guard = _otc_guard(market, filters, include_otc)
+    base = [Filter(**f) for f in guarded]
     cols = [
         "name", "close", "open", "change", "sector",
         "gap", "volume", "relative_volume_10d_calc",
@@ -2301,6 +2459,8 @@ def gap_scanner(
     result["market"] = market
     result["sample"] = len(rows)
     result["min_gap_pct"] = min_gap_pct
+    if guard:
+        result["otc_guard"] = guard
     return result
 
 
@@ -2468,6 +2628,7 @@ def dividend_screen(
     filters: list[dict] | None = None,
     limit: int = 500,
     top: int = 50,
+    include_otc: bool = False,
 ) -> dict:
     """Find high-quality dividend-paying stocks ranked by a Dividend Quality Score.
 
@@ -2497,6 +2658,7 @@ def dividend_screen(
     filters:         optional extra filters (e.g. market_cap_basic > 1e9).
     limit:           rows to sample (default 500).
     top:             max stocks to return (default 50).
+    include_otc:     scan OTC too (default False).
 
     Returns {market, universe, sample, min_yield, count, avg_yield,
     by_category:{Aristocrat, Achiever, Grower, Payer},
@@ -2504,7 +2666,8 @@ def dividend_screen(
     stocks:[{name, close, change, sector, market_cap_basic, div_yield,
     years_paying, years_growing, payout_ratio, roe, category, dq_score, perf_1m}]}.
     """
-    base_filters = [Filter(**f) for f in (filters or [])]
+    guarded, guard = _otc_guard(market, filters, include_otc)
+    base_filters = [Filter(**f) for f in guarded]
     base_filters.append(
         Filter(field="dividend_yield_recent", op=">", value=max(0.0, min_yield))
     )
@@ -2537,6 +2700,8 @@ def dividend_screen(
     result["market"] = market
     result["min_yield"] = min_yield
     result["sample"] = len(resp["rows"])
+    if guard:
+        result["otc_guard"] = guard
     return result
 
 

@@ -394,6 +394,41 @@ scored still got through.
   full suite, since only a live call can catch a dead field.
 - Five new tests. Suite: 150 offline, 33 live, 183 total.
 
+## OTC guard on the tools 2026-08-02
+
+Extends the preset OTC guard to the market study tools, and fixes the query-layer bug
+underneath it.
+
+- **`Query.where()` assigns rather than appends, so every filtered scan was on the wrong
+  universe.** `stocks('america')` ships `is_primary == true` in `query['filter']`, and
+  `where()` does `self.query['filter'] = list(expressions)`. Adding any condition wiped it
+  out: a trivially true filter (`close > -1e12`) took america from 7,648 rows to 13,374 by
+  readmitting every non-primary listing. So every preset and every filtered tool was scanning
+  a different, dirtier universe than the unfiltered default view, and a good share of the OTC
+  junk came in through that door. `run_query` now composes with the market's own constraints.
+  `where2` had the same problem on `filter2`, which carries the instrument type constraints,
+  so the `match="any"` path is fixed too.
+- **`top_movers` and `gap_scanner` were made entirely of the junk the preset guard exists to
+  remove.** Measured: gainers 10/10 OTC, losers 10/10 OTC, gap_up 50/50, gap_down 50/50. Both
+  rank on a percentage move, which a sub-penny shell wins by construction. Top gainer was
+  EMWPF at +279,900%. Guarded, the list becomes FCUV +517%, REPL +107%, real companies.
+- 13 tools now take `include_otc` (12 market studies plus `run_factor_preset`) and report an
+  `otc_guard` block. Same shape as the preset guard: exchange exclusion only, no market cap
+  and no price floor. The guard stands aside if the caller supplies their own `exchange`
+  filter, and never applies off america. `screen` is deliberately exempt: raw escape hatch,
+  caller-supplied `match`, and appending under `match="any"` would widen rather than restrict.
+- The tools ranking on volume, relative strength, EMA stack or factor score measured 0% OTC
+  even unguarded, since they sample in market-cap order. Guarded anyway: their reported
+  `universe` was counting rows they would never sample, a raised `limit` reaches the shells,
+  and a factor blend is z-scored across the returned set so one absurd row moves every other
+  row's score.
+- Also worth recording: there are five america exchange values, not four. OTC, NYSE, NASDAQ,
+  AMEX and **CBOE**. The original guard note said four. The `not_in ["OTC"]` form was right
+  for exactly this reason, an allow list would have silently dropped CBOE.
+- Eleven new tests, including `test_every_broad_america_tool_takes_include_otc` and
+  `test_a_trivially_true_filter_does_not_change_the_universe`. Suite: 157 offline, 37 live,
+  194 total.
+
 ## Known notes
 - Crypto/forex/bond/cfd scans are huge (tens of thousands of rows). The default limit is 150; raise
   it in state if you want deeper pulls.

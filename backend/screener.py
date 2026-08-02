@@ -176,13 +176,39 @@ def run_query(
     try:
         q = _base_query(market).select(*select_cols)
 
+        # The market helpers come pre-loaded with the constraints that DEFINE
+        # the market: stocks('america') carries is_primary == true in `filter`,
+        # plus the instrument type constraints in `filter2`. Both Query.where()
+        # and Query.where2() ASSIGN rather than append:
+        #
+        #     def where(self, *expressions):
+        #         self.query['filter'] = list(expressions)
+        #
+        # so adding any condition of our own silently wiped them out. A single
+        # trivially true filter (close > -1e12) took america from 7,648 rows to
+        # 13,374 by readmitting every non-primary listing, which means every
+        # preset and every filtered tool has been scanning a different, much
+        # dirtier universe than the unfiltered default view. Compose with the
+        # market's own constraints instead of replacing them.
+        base_filter = list(q.query.get("filter") or [])
+        base_filter2 = q.query.get("filter2")
+
         if conds:
             if match == "any" and len(conds) > 1:
                 from tradingview_screener import Or
 
-                q = q.where2(Or(*conds))
+                combined = Or(*conds)
+                # filter2 is {"operator": "and", "operands": [{"operation":...}]}
+                # and Or() returns exactly that operand shape, so the market's
+                # type constraints survive alongside ours.
+                if isinstance(base_filter2, dict) and base_filter2.get("operator") == "and":
+                    base_filter2.setdefault("operands", []).append(combined)
+                else:
+                    q = q.where2(combined)
+                if base_filter:
+                    q = q.where(*base_filter)
             else:
-                q = q.where(*conds)
+                q = q.where(*base_filter, *conds)
 
         if sort:
             first = sort[0]
