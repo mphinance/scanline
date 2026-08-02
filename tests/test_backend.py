@@ -12,7 +12,7 @@ import pytest
 
 from backend import analytics
 from backend.fields import FIELDS, field_index, validate_field
-from backend.presets import FACTOR_PRESETS, PRESETS
+from backend.presets import FACTOR_PRESETS, OTC_GUARDED, PRESETS
 
 
 # --- catalog -------------------------------------------------------------
@@ -56,6 +56,115 @@ def test_preset_filter_fields_are_real():
             val = flt.get("value")
             if isinstance(val, str):
                 assert validate_field(val), f"{p['id']} compares against unknown field {val}"
+
+
+# --- OTC guard -----------------------------------------------------------
+
+_FLOOR_FIELDS = {
+    "market_cap_basic", "market_cap_calc",
+    "volume", "average_volume_10d_calc", "average_volume_30d_calc",
+    "average_volume_60d_calc", "average_volume_90d_calc", "value_traded",
+    "close", "open", "low", "high",
+}
+
+
+def _has_numeric_floor(preset: dict) -> bool:
+    """True when a preset already bounds size, liquidity or price from below.
+
+    A comparison against another FIELD (close > EMA8) is not a floor, and a
+    ceiling (close < 5) is not one either, so neither counts here.
+    """
+    for f in preset.get("filters", []) or []:
+        if f.get("field") not in _FLOOR_FIELDS:
+            continue
+        op, val = str(f.get("op")), f.get("value")
+        if op in (">", ">=") and isinstance(val, (int, float)):
+            return True
+        if op in ("between", "in_range") and isinstance(val, (list, tuple)) and val:
+            if isinstance(val[0], (int, float)):
+                return True
+    return False
+
+
+def test_otc_guard_applied_to_every_guarded_preset():
+    for p in PRESETS:
+        if p["id"] not in OTC_GUARDED:
+            continue
+        assert p.get("otc_guarded") is True, f"{p['id']} is not marked otc_guarded"
+        assert any(f.get("field") == "exchange" and f.get("op") == "not_in"
+                   for f in p["filters"]), f"{p['id']} is missing the OTC exclusion"
+
+
+def test_otc_guard_only_on_match_all_america_presets():
+    # The guard APPENDS a condition. Under match "any" that would widen the
+    # result rather than restrict it, and a US exchange filter is meaningless
+    # off the america market.
+    for p in PRESETS:
+        if p["id"] in OTC_GUARDED:
+            assert p.get("match", "all") == "all", f"{p['id']} uses match=any"
+            assert p["market"] == "america", f"{p['id']} is not a US preset"
+
+
+def test_every_unprotected_america_preset_is_guarded():
+    # This is the point of the guard. A new america preset with no floor must
+    # either gain a floor or join OTC_GUARDED, otherwise it silently returns
+    # sub-penny OTC shells whose indicator values are computed from noise.
+    for p in PRESETS:
+        if p["market"] != "america" or p.get("match", "all") != "all":
+            continue
+        if _has_numeric_floor(p):
+            continue
+        assert p["id"] in OTC_GUARDED, (
+            f"{p['id']} has no size, liquidity or price floor and is not OTC-guarded"
+        )
+
+
+def test_otc_guard_is_idempotent():
+    # Import order must never double-append the exclusion.
+    from backend import presets as presets_mod
+
+    before = [len(p["filters"]) for p in PRESETS]
+    presets_mod._apply_otc_guard()
+    assert [len(p["filters"]) for p in PRESETS] == before
+
+
+@pytest.mark.live
+def test_preset_filter_fields_are_populated_in_their_own_market():
+    """A field can be in the catalog and still be null in a given market.
+
+    validate_field is global, so the offline field tests cannot see this.
+    crypto_movers filtered on Value.Traded, which is a real catalog field but is
+    NULL for every row in the crypto market, so the preset silently returned 0
+    rows out of 39,812 while reporting success and no error. Catalog validity is
+    global; field availability is per market, and only a live call can tell.
+    """
+    from backend.models import ScreenRequest
+    from backend.pipeline import run_screen
+
+    wanted: dict[str, set[str]] = {}
+    for p in PRESETS:
+        # A preset that DECLARES itself unavailable has already accounted for its
+        # dead field in the open, which is the outcome this test exists to force.
+        if p.get("unavailable"):
+            continue
+        for f in p.get("filters", []) or []:
+            wanted.setdefault(p["market"], set()).add(f["field"])
+            val = f.get("value")
+            if isinstance(val, str) and validate_field(val):
+                wanted[p["market"]].add(val)
+
+    for market, fields in wanted.items():
+        cols = sorted(fields)
+        resp = run_screen(ScreenRequest(market=market, filters=[], columns=cols, limit=200))
+        assert not resp["meta"].get("error"), f"{market}: {resp['meta']['error']}"
+        assert resp["rows"], f"{market} returned no rows at all"
+        for field in cols:
+            populated = sum(1 for r in resp["rows"] if r.get(field) is not None)
+            assert populated, (
+                f"{market}: preset filter field '{field}' is null for all "
+                f"{len(resp['rows'])} sampled rows, so any preset filtering on it "
+                f"returns nothing while reporting success"
+            )
 
 
 # --- safe_eval sandbox ---------------------------------------------------

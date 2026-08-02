@@ -43,7 +43,7 @@ backend/        FastAPI app + the screen engine
   presets.py      47 preset scans + 5 factor presets
   models.py       pydantic request/response models
   cache.py        in-memory TTL cache
-  mcp_server.py   the MCP server (fastmcp): 16 tools, 4 prompts, 3 resources
+  mcp_server.py   the MCP server (fastmcp): 27 tools, 4 prompts, 3 resources
 frontend/       vanilla JS, ES modules registering via window.Screener.registerModule
   css/theme.css   the synthwave design tokens (the source of truth for the look)
   js/             feature modules (filters, columns, presets, factor, table, detail, openin, ...)
@@ -87,7 +87,7 @@ over the returned rows. The HTTP endpoint and the MCP `screen` tool both call
 ## The MCP server
 
 `backend/mcp_server.py` exposes the same engine over the Model Context Protocol
-with `fastmcp`. 16 tools (screening + symbol intelligence), 4 prompts, 3
+with `fastmcp`. 27 tools (screening, symbol intelligence, market studies), 4 prompts, 3
 resources. The centerpiece is `analyze`, a multi-timeframe chart read (RSI and
 MACD bias on the 1h/4h/1d/1w/1m at once). Full reference and config in
 `docs/MCP.md`.

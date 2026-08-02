@@ -1,4 +1,4 @@
-# STATUS - SCANLINE
+﻿# STATUS - SCANLINE
 
 **Build complete. 52 / 52 features passing.** A real, live market screener with a quant analytics
 layer, in the synthwave aesthetic. Built with the orchestrator pattern: 7 waves, 11 parallel
@@ -335,6 +335,28 @@ pip install -r requirements.txt
 python run.py        # http://127.0.0.1:8000/
 python -m pytest tests/ -q
 ```
+
+## Audit 2026-08-02 (external contribution, cmxms)
+
+Fixes for six cases where a scan or tool returned nothing while reporting success. Full
+detail and measurements are in the pull request.
+
+- `_resolve_row` ignored `meta.error`, so a rate limited TradingView made `analyze` and
+  `technical_rating` report `No symbol 'X' in market 'america'` for real tickers. It now
+  returns `(row, error)`; the tools distinguish unavailable from absent.
+- Four scans filtered on fields that validate against the catalog but are null in their own
+  market, so they returned 0 rows with no error: `crypto_movers` (`Value.Traded`),
+  `dividend_aristocrats` (`payout_ratio`), `earnings_radar` (`days_to_earnings`, its live test
+  was already failing), and `high_short_interest`, which has no substitute and is now marked
+  `unavailable` rather than deleted.
+- 26 of 47 presets had no size, liquidity or price floor and none had a price floor, so the
+  signal scans were dominated by sub-penny OTC shells. Added `NO_OTC` plus an explicit
+  `OTC_GUARDED` set. Exchange exclusion only, no market cap or price floor. `run_preset` takes
+  `include_otc` to lift it and reports how many rows the guard removed.
+- Tool counts corrected (16 to 27) and the 11 undocumented tools added to `docs/MCP.md`.
+  `pytest` added to `requirements.txt`.
+- Five new tests, including a live one asserting every preset filter field is populated in its
+  own market. Suite: 146 offline, 31 live.
 
 ## Known notes
 - Crypto/forex/bond/cfd scans are huge (tens of thousands of rows). The default limit is 150; raise

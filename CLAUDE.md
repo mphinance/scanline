@@ -33,7 +33,7 @@ node --test frontend/js/*.test.mjs          # frontend logic tests
 - Screen engine: `backend/pipeline.py` (shared by the HTTP API and the MCP server).
 - Analytics (sandboxed expressions, stats, factor model): `backend/analytics.py`.
 - Field catalog: `backend/fields.py`. Presets: `backend/presets.py`.
-- MCP server (16 tools, 4 prompts, 3 resources): `backend/mcp_server.py`. Reference: `docs/MCP.md`.
+- MCP server (27 tools, 4 prompts, 3 resources): `backend/mcp_server.py`. Reference: `docs/MCP.md`.
 - Frontend feature modules: `frontend/js/` (register via `window.Screener.registerModule`).
 - Static showcase (Pages): `showcase/`.
 - Deeper docs: `docs/ARCHITECTURE.md`, `docs/MCP.md`, `CONTRIBUTING.md`.

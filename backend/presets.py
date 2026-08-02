@@ -150,6 +150,17 @@ PRESETS: list[dict] = [
         "name": "High Short Interest",
         "description": "Heavily shorted as a percent of float, squeeze watch.",
         "market": "america",
+        # UNAVAILABLE, and unlike the other dead-field cases there is no substitute.
+        # short_interest, short_interest_percent_of_float and
+        # short_interest_prev_month_pct all validate against the catalog and are
+        # ALL null on every sampled US row, so this preset returned 0 rows while
+        # reporting success. TradingView does not carry short interest on the
+        # no-account delayed tier. Kept rather than deleted so the gap stays
+        # visible and nobody re-adds it, and run_preset refuses it up front with
+        # this reason instead of running a screen that can only come back empty.
+        "unavailable": ("Short interest is not carried on TradingView's no-account "
+                        "delayed tier. All three short interest fields are null for "
+                        "every row, so this scan can only ever return nothing."),
         "columns": _CORE + ["short_interest_percent_of_float", "relative_volume_10d_calc"],
         "filters": [
             {"field": "short_interest_percent_of_float", "op": ">", "value": 15},
@@ -161,12 +172,19 @@ PRESETS: list[dict] = [
     {
         "id": "dividend_aristocrats",
         "name": "Dividend Aristocrats",
-        "description": "Solid yield with a sustainable payout ratio.",
+        "description": "Solid yield on a large cap, with the dividend still growing.",
         "market": "america",
-        "columns": _FUND + ["dividend_yield_recent", "payout_ratio"],
+        # payout_ratio was the second filter here and it is NULL for every US row.
+        # It validates against the catalog, so the field tests passed while the
+        # preset returned 0 rows instead of the 988 it should have. Replaced with
+        # dividend PER SHARE growth, which is populated (161 of 200 sampled) and is
+        # closer to what "aristocrat" means anyway: a rising dividend, not merely a
+        # sustainable one.
+        "columns": _FUND + ["dividend_yield_recent",
+                            "dps_common_stock_prim_issue_yoy_growth_fy"],
         "filters": [
             {"field": "dividend_yield_recent", "op": ">", "value": 3},
-            {"field": "payout_ratio", "op": "between", "value": [10, 80]},
+            {"field": "dps_common_stock_prim_issue_yoy_growth_fy", "op": ">", "value": 0},
             {"field": "market_cap_basic", "op": ">", "value": 2e9},
         ],
         "match": "all",
@@ -268,11 +286,18 @@ PRESETS: list[dict] = [
     {
         "id": "crypto_movers",
         "name": "Crypto Movers",
-        "description": "Biggest crypto movers by 24h change.",
+        "description": "Biggest movers among liquid crypto, by 24h change.",
         "market": "crypto",
-        "columns": ["name", "close", "change", "volume", "market_cap_calc", "Value.Traded"],
+        # Value.Traded was both the filter and a column here, and it is NULL for
+        # every row in the crypto market. It validates (it is a real catalog
+        # field), so the field tests passed while the preset silently returned
+        # 0 of 39,812 coins. Catalog validity is global, field availability is
+        # per market. market_cap_calc is populated here and is also the right
+        # gate: filtering on volume instead returns the crypto version of the
+        # OTC problem, POLONIEX meme coins priced at $0.00 showing +2,848 percent.
+        "columns": ["name", "close", "change", "volume", "market_cap_calc"],
         "filters": [
-            {"field": "Value.Traded", "op": ">", "value": 1e6},
+            {"field": "market_cap_calc", "op": ">", "value": 1e8},
         ],
         "match": "all",
         "sort": [{"field": "change", "dir": "desc"}],
@@ -689,3 +714,79 @@ FACTOR_PRESETS: list[dict] = [
         ],
     },
 ]
+
+
+# ---------------------------------------------------------------------------
+# OTC guard
+#
+# Excluding OTC is a DATA QUALITY decision, not a view on company size.
+#
+# Measured 2026-08-02: trend_adx_strong_bull returned 2,423 matches, and all 25
+# of the top rows were OTC, 24 of them under $1, every one with a blank company
+# name, carrying "changes" like +9,900 percent. That figure is a $0.0001 tick
+# rendered as a percentage, not a move. An ADX or RSI reading on a name like that
+# is computed from noise, so the scan is not finding risky opportunities, it is
+# finding arithmetic. Excluding the venue drops the count to 1,262 and the top
+# rows become real listed names (FCUV, REPL, TCX).
+#
+# Only four exchange values exist in market=america: OTC, NYSE, NASDAQ and AMEX.
+# So a single not_in ["OTC"] is exact. Deliberately NOT an allow list of the
+# other three, which would silently drop a venue TradingView adds later. And
+# deliberately no market cap or share price floor: a $2 NASDAQ small cap is a
+# legitimate result and stays in.
+#
+# Only presets with no existing floor are guarded. small_cap_momentum already
+# bounds market cap at $300M and is left alone. crypto_movers is a crypto market
+# preset where a US exchange filter would be meaningless.
+#
+# Lift it per call with run_preset(..., include_otc=True).
+# ---------------------------------------------------------------------------
+NO_OTC: dict = {"field": "exchange", "op": "not_in", "value": ["OTC"]}
+
+OTC_GUARDED: set[str] = {
+    "signal_golden_cross",
+    "signal_death_cross",
+    "signal_stacked_ema_ribbon",
+    "signal_above_all_mas",
+    "signal_gap_and_go",
+    "signal_volume_breakout",
+    "signal_below_all_mas",
+    "signal_ema_ribbon_bear",
+    "mom_macd_bull_cross",
+    "mom_macd_bear_cross",
+    "mom_stoch_bull_oversold",
+    "mom_stoch_bear_overbought",
+    "mom_stochrsi_bull",
+    "mom_rsi_reclaim_50",
+    "mom_ao_zero_cross",
+    "mom_cci_reversal",
+    "trend_vwap_reclaim",
+    "trend_ema_8_21_bull",
+    "trend_adx_strong_bull",
+    "trend_sar_bull",
+    "trend_williams_oversold",
+    "trend_strong_buy_rating",
+    "mtf_rsi_triple_bull",
+    "mtf_rsi_triple_bear",
+    "mtf_macd_daily_weekly",
+}
+
+
+def _apply_otc_guard() -> None:
+    """Append NO_OTC to every guarded preset, once, at import.
+
+    Every guarded preset uses match "all", so the added condition RESTRICTS the
+    result. It would WIDEN it under match "any", which is why the set above is
+    explicit rather than computed: a preset added later with match "any" must not
+    pick this up by accident. The test suite asserts the set stays correct.
+    """
+    for p in PRESETS:
+        if p["id"] not in OTC_GUARDED:
+            continue
+        if any(f.get("field") == "exchange" for f in p.get("filters", []) or []):
+            continue
+        p["filters"] = [*p.get("filters", []), dict(NO_OTC)]
+        p["otc_guarded"] = True
+
+
+_apply_otc_guard()
