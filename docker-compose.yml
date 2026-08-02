@@ -27,4 +27,9 @@ services:
     command: ["scanline-mcp", "--http", "8765"]
     ports:
       - "127.0.0.1:8765:8765"
+    # The image's healthcheck probes the web app's /api/health, which this
+    # container does not serve. Left on, the service sits at "unhealthy"
+    # forever while working fine.
+    healthcheck:
+      disable: true
     restart: unless-stopped

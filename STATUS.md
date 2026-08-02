@@ -12,17 +12,17 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 ### Backend (FastAPI)
 - Service wrapper over `tradingview-screener` using the per-market helper functions so stocks,
   crypto, forex, futures, bonds, and CFDs all return live rows.
-- 172-field curated catalog, grouped and typed. 22 preset scans + 5 factor presets.
+- 190-field curated catalog, grouped and typed. 47 preset scans + 5 factor presets.
 - Sandboxed AST expression engine for computed columns (no `eval`, rejects `__`, attribute access,
   subscripts, and anything off the whitelist).
 - In-result stats (zscore, pctrank, rank, norm) and a direction-aware weighted z-score factor model.
 - In-memory TTL cache. Structured JSON errors, never a 500 stacktrace.
-- 23 pytest tests passing (analytics math offline + a live API smoke).
+- 157 offline pytest tests passing (analytics math + MCP wiring), 194 including the live ones.
 
 ### Frontend (vanilla JS, no build)
 - Synthwave terminal shell: dark `#0a0a0c`, neon cyan/pink/green/purple, glassmorphism, JetBrains
   Mono for data, Inter for UI, glow on interactives.
-- Visual filter builder (full operator set, AND/OR), market switcher, 172-field column picker,
+- Visual filter builder (full operator set, AND/OR), market switcher, 190-field column picker,
   computed + stat column builders, interactive factor weight builder.
 - Data table with multi-key sort, per-column client filters, summary-stat footer, heatmap and
   sign conditional formatting.
@@ -61,6 +61,21 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
   config snippet (and the README's, and `docs/MCP.md`'s) collapsed from absolute
   interpreter paths to `{"command": "scanline-mcp"}`, plus `claude mcp add`.
   Fixed a stale "16 MCP tools" claim on the showcase; it is 27.
+
+  Review pass on the above caught two real bugs. `scanline-mcp --http` called
+  `mcp.run()` without a host, and fastmcp binds 127.0.0.1 by default, so inside
+  a container it was invisible from outside no matter which port you published;
+  the `mcp` compose profile could never have worked. `main()` now resolves a
+  host the same way the web app does (flag, then `SCANLINE_HOST`, then
+  loopback), which the image's existing `SCANLINE_HOST=0.0.0.0` then picks up.
+  Verified by completing a real MCP `initialize` handshake from the host against
+  a containerized `--http` server. Second bug: the compose MCP service inherited
+  the image healthcheck, which probes the web app's `/api/health` and so left
+  that service permanently `unhealthy` while working fine; it is disabled there
+  now. `scanline-mcp --help` also used to silently start the stdio server, so it
+  prints usage instead. Same pass found stale counts, now corrected: the curated
+  catalog is 190 fields (not 172), there are 47 presets (not 22), and the suite
+  is 157 offline / 194 total (not 23).
 
 - **Nightly 2026-07-02** Added `dividend_screen` MCP tool. Finds high-quality
   dividend-paying stocks ranked by a composite Dividend Quality Score (`dq_score`,

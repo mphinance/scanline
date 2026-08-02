@@ -128,7 +128,18 @@ purpose. Calling `.where(*conds)` directly drops `is_primary` and nearly doubles
 the universe.
 
 Register it (Claude Desktop `claude_desktop_config.json`, or a project
-`.mcp.json` for Claude Code):
+`.mcp.json` for Claude Code). Installed, there are no paths to get wrong:
+
+```json
+{
+  "mcpServers": {
+    "scanline": { "command": "scanline-mcp" }
+  }
+}
+```
+
+Running from a checkout instead, point at the venv interpreter with absolute
+paths:
 
 ```json
 {

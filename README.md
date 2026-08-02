@@ -203,7 +203,7 @@ python run.py
 **As a command, from anywhere:**
 
 ```bash
-pip install .          # or: pip install git+https://github.com/mphinance/scanline
+pip install git+https://github.com/mphinance/scanline    # or `pip install .` in a checkout
 scanline               # the web app
 scanline-mcp           # the MCP server (stdio)
 ```
@@ -228,6 +228,7 @@ backend/      FastAPI app, screen pipeline, screener service, analytics, field c
               + mcp_server.py (the same engine over MCP), cli.py (the `scanline` command)
 frontend/     index.html, css/, js/ feature modules (filters, columns, presets, factor, table, ...)
 showcase/     the static TradingView widget gallery deployed to GitHub Pages
+pine/         Pine Script written for an AI to read (scanline_ai_read.pine)
 docs/         screenshots + capture.py (headless Playwright screenshotter)
 run.py        launches the web app on 127.0.0.1:8000
 run_mcp.py    launches the MCP server (stdio, or --http PORT)
@@ -240,7 +241,9 @@ tests/        pytest: analytics math, MCP wiring, + live API smoke
 ## Tests
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q -m "not live"   # offline: analytics + MCP wiring, no network
+python -m pytest tests/ -q                  # adds the live tests (hits TradingView)
+node --test frontend/js/*.test.mjs          # frontend logic
 ```
 
 ## Docs
@@ -254,7 +257,7 @@ python -m pytest tests/ -q
 ## Notes
 
 - Read-only by design. No order execution, no money movement.
-- `tradingview-screener` exposes 3000+ fields. The catalog curates 172 of the most useful ones,
+- `tradingview-screener` exposes 3000+ fields. The catalog curates 190 of the most useful ones,
   grouped and typed; computed columns reach anything you can express from them.
 
 ## Credits

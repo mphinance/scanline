@@ -8,13 +8,16 @@ needed (data is live and delayed).
 ## Run
 
 ```bash
-pip install .                  # puts `scanline-mcp` on your PATH
+pip install git+https://github.com/mphinance/scanline   # or `pip install .` in a checkout
 
 scanline-mcp                   # stdio (Claude Desktop, Claude Code)
 scanline-mcp --http 8765       # streamable-http for remote / multi-client
+scanline-mcp --http 8765 --host 0.0.0.0   # reachable from off the machine
 ```
 
-From a checkout without installing, `python run_mcp.py` takes the same flags.
+`--host` defaults to `127.0.0.1` and also reads `SCANLINE_HOST`, matching the
+web app. It only applies to `--http`; stdio has no socket. From a checkout
+without installing, `python run_mcp.py` takes the same flags.
 
 ## Register
 
