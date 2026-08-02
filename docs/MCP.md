@@ -88,31 +88,60 @@ detailed ones.
 ### Market studies
 
 Each of these runs one broad screen and reduces it to a structured read, rather
-than handing back rows. All take an optional `filters` list you can narrow with.
+than handing back rows. All take an optional `filters` list you can narrow with,
+and all take `include_otc` (see below).
 
-- **`top_movers(market, n, filters, columns)`** The top N gainers and top N
-  losers in one call.
-- **`volume_leaders(market, min_rvol, filters, limit, top)`** Names trading on
-  unusual volume right now, classified by price direction.
-- **`new_highs_lows(market, filters, threshold, limit)`** Stocks at or near their
-  52 week highs and lows. A classic breadth gauge.
-- **`market_breadth(market, filters, limit)`** Advancers and decliners, percent
-  above key moving averages, and the RSI distribution.
-- **`sector_rotation(market, filters, limit)`** Sectors ranked by multi-timeframe
-  momentum. A rotation dashboard.
-- **`momentum_consistency(market, direction, min_aligned, filters, limit, top)`**
+- **`top_movers(market, n, filters, columns, include_otc)`** The top N gainers and
+  top N losers in one call.
+- **`volume_leaders(market, min_rvol, filters, limit, top, include_otc)`** Names
+  trading on unusual volume right now, classified by price direction.
+- **`new_highs_lows(market, filters, threshold, limit, include_otc)`** Stocks at or
+  near their 52 week highs and lows. A classic breadth gauge.
+- **`market_breadth(market, filters, limit, include_otc)`** Advancers and
+  decliners, percent above key moving averages, and the RSI distribution.
+- **`sector_rotation(market, filters, limit, include_otc)`** Sectors ranked by
+  multi-timeframe momentum. A rotation dashboard.
+- **`momentum_consistency(market, direction, min_aligned, filters, limit, top, include_otc)`**
   Ranks names by how consistently returns align across five timeframes.
-- **`relative_strength_leaders(market, filters, limit, top)`** Names outperforming
-  their own sector peers, not just the index.
-- **`ema_stack_scan(market, min_stack, filters, limit, top)`** Ranks by EMA and
-  SMA stack alignment. A bull-stack breadth indicator.
-- **`gap_scanner(market, min_gap_pct, filters, limit, top)`** Names that gapped at
-  the open, with intraday fill progress tracked.
-- **`earnings_radar(market, horizon, filters, limit, top)`** Names reporting
-  earnings within the next N days. Company earnings only. This is NOT an economic
-  calendar and carries no macro releases.
-- **`dividend_screen(market, min_yield, min_years_growing, filters, limit, top)`**
+- **`relative_strength_leaders(market, filters, limit, top, include_otc)`** Names
+  outperforming their own sector peers, not just the index.
+- **`ema_stack_scan(market, min_stack, filters, limit, top, include_otc)`** Ranks by
+  EMA and SMA stack alignment. A bull-stack breadth indicator.
+- **`gap_scanner(market, min_gap_pct, filters, limit, top, include_otc)`** Names
+  that gapped at the open, with intraday fill progress tracked. Samples both
+  tails, so gap downs come back as well as gap ups.
+- **`earnings_radar(market, horizon, filters, limit, top, include_otc)`** Names
+  reporting earnings within the next N days. Company earnings only. This is NOT an
+  economic calendar and carries no macro releases.
+- **`dividend_screen(market, min_yield, min_years_growing, filters, limit, top, include_otc)`**
   Dividend payers ranked by a composite Dividend Quality Score.
+
+### The OTC guard
+
+On `market="america"` every tool above, plus `run_preset` and
+`run_factor_preset`, excludes OTC by default.
+
+It is a data quality filter, not a view on company size. A sub-penny shell that
+ticks one hundredth of a cent posts a four figure percentage move, so anything
+ranking on change or gap returns those rows and only those rows. Measured
+unguarded, `top_movers` came back 10 of 10 OTC on both its gainers and its
+losers, and `gap_scanner` 50 of 50 on both sides. The top gain was +334900%,
+which is a $0.0001 tick rendered as a percentage.
+
+There is **no market cap and no share price floor**, so a $2 NASDAQ small cap is
+still a legitimate result and still comes back. It is a single
+`exchange not_in ["OTC"]`, deliberately not an allow list of the other venues,
+which would silently drop one TradingView adds later. There are five today:
+OTC, NYSE, NASDAQ, AMEX and CBOE.
+
+Nothing is dropped silently: the response carries an `otc_guard` block saying
+whether the guard was active. Pass `include_otc=True` to lift it per call. The
+guard also stands aside entirely if you supply your own `exchange` filter, and
+never applies off `america`, where the venue names are meaningless.
+
+`screen` is deliberately **not** guarded. It is the raw escape hatch, its filters
+are entirely yours, and it accepts `match="any"`, where an appended condition
+would widen the result rather than restrict it.
 
 ## Prompts (4)
 
