@@ -697,10 +697,19 @@ FACTOR_PRESETS: list[dict] = [
     },
     {
         "id": "growth",
+        # Same dead-field class as the preset fixes above, and the worst case of
+        # it, because a factor model cannot come back empty. revenue_growth_ttm_yoy
+        # and earnings_per_share_diluted_growth_percent_ttm_yoy are real catalog
+        # fields and are null for every US row (0 of 1000 sampled at market cap
+        # > $1B). apply_factor scores a missing value as 0, so both weight-1.0
+        # terms contributed nothing and "Growth" was a pure gross_margin sort:
+        # scores were identical to a gross-margin-only model on 1000 of 1000 rows.
+        # It ranked, it reported success, and it was not measuring growth.
+        # Replaced with the populated TTM YoY analogues of the same two measures.
         "name": "Growth",
         "weights": [
-            {"field": "revenue_growth_ttm_yoy", "weight": 1.0, "dir": "high"},
-            {"field": "earnings_per_share_diluted_growth_percent_ttm_yoy", "weight": 1.0, "dir": "high"},
+            {"field": "total_revenue_yoy_growth_ttm", "weight": 1.0, "dir": "high"},
+            {"field": "earnings_per_share_diluted_yoy_growth_ttm", "weight": 1.0, "dir": "high"},
             {"field": "gross_margin", "weight": 0.5, "dir": "high"},
         ],
     },

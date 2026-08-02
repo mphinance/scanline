@@ -1,4 +1,4 @@
-﻿# STATUS - SCANLINE
+# STATUS - SCANLINE
 
 **Build complete. 52 / 52 features passing.** A real, live market screener with a quant analytics
 layer, in the synthwave aesthetic. Built with the orchestrator pattern: 7 waves, 11 parallel
@@ -357,6 +357,37 @@ detail and measurements are in the pull request.
   `pytest` added to `requirements.txt`.
 - Five new tests, including a live one asserting every preset filter field is populated in its
   own market. Suite: 146 offline, 31 live.
+
+## Follow-up 2026-08-02 (merge review)
+
+Merged the audit above and carried its lens into the places it had not reached. The dead-field
+check it added only walked preset FILTER fields, so dead fields that are merely displayed or
+scored still got through.
+
+- **Growth factor model was not measuring growth.** `revenue_growth_ttm_yoy` and
+  `earnings_per_share_diluted_growth_percent_ttm_yoy` are both null for every US row (0 of 1000
+  sampled above $1B). `apply_factor` scores a missing value as 0, so both weight-1.0 terms
+  contributed nothing and Growth was a pure `gross_margin` sort, identical to a
+  gross-margin-only model on 1000 of 1000 rows. A factor model cannot return zero rows, so
+  nothing looked wrong. Swapped to the populated TTM YoY analogues
+  (`total_revenue_yoy_growth_ttm` 996/1000, `earnings_per_share_diluted_yoy_growth_ttm`
+  959/1000); now matches the gross-margin-only ranking on 3 of 1000.
+- **`Value.Traded` survived in three more places** after coming out of `crypto_movers`:
+  `DEFAULT_COLUMNS["crypto"]` and `MARKET_FIELDS["crypto"]` in `backend/fields.py`, and the
+  frontend mirror in `presets.js`. The default crypto view carried a permanently blank column.
+- **`unavailable` was only honored on the MCP path.** `run_preset` refuses `high_short_interest`,
+  but `/api/presets` ships the preset and the web UI ran it, returning zero rows that read as
+  "no matches today". The preset card is now disabled and states the reason.
+- **`earnings_radar` day buckets depended on the host timezone.**
+  `earnings_release_next_date` is a real UTC instant, and converting it with local time meant
+  the same row read 24 days out from New York and 25 from Tokyo. Both the query window and the
+  day count now resolve on the market's clock, with a fallback to local time when the tz
+  database is missing.
+- CI: the frontend step named two test files instead of globbing, so a new `*.test.mjs` would
+  never have run. Added mechanical house-rule checks (no em dashes, no byte order marks; the
+  audit branch had introduced a BOM at the top of this file) and a daily `live.yml` running the
+  full suite, since only a live call can catch a dead field.
+- Four new tests. Suite: 150 offline, 32 live, 182 total.
 
 ## Known notes
 - Crypto/forex/bond/cfd scans are huge (tens of thousands of rows). The default limit is 150; raise

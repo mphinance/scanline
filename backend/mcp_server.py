@@ -1911,6 +1911,33 @@ def ema_stack_scan(
     }
 
 
+def _market_tz() -> dt.tzinfo | None:
+    """US market timezone, or None to fall back to the host's local time.
+
+    earnings_release_next_date is a real UTC instant (NVDA reads 20:00 UTC, the
+    4pm ET after-close slot), so turning it into a CALENDAR DAY needs a fixed
+    reference. Using the host's timezone made "reports today" depend on where the
+    server happened to run: the same row buckets one day later from Tokyo than
+    from New York. The market's own clock is the honest anchor for a US equities
+    scan, so both the query window and the day count use it.
+
+    Returns None when the tz database is unavailable (a bare Windows install
+    without `tzdata`), which restores the previous local-time behaviour rather
+    than failing the scan.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo("America/New_York")
+    except Exception:
+        return None
+
+
+def _market_today() -> dt.date:
+    """Today's date on the market's clock (see _market_tz)."""
+    return dt.datetime.now(_market_tz()).date()
+
+
 def _days_to_earnings(ts: Any, today: dt.date | None = None) -> int | None:
     """Whole days from today to an earnings timestamp, or None.
 
@@ -1920,15 +1947,16 @@ def _days_to_earnings(ts: Any, today: dt.date | None = None) -> int | None:
     sampled) and is a unix timestamp, so the number is derived from that instead.
 
     Compared as DATES rather than elapsed seconds, so an announcement later today
-    is 0 and not a fraction that floors to the wrong bucket.
+    is 0 and not a fraction that floors to the wrong bucket. Both sides of that
+    subtraction resolve in MARKET time, not the host's. See _market_tz.
     """
     if not isinstance(ts, (int, float)) or isinstance(ts, bool):
         return None
     try:
-        when = dt.datetime.fromtimestamp(float(ts)).date()
+        when = dt.datetime.fromtimestamp(float(ts), _market_tz()).date()
     except (OverflowError, OSError, ValueError):
         return None
-    return (when - (today or dt.date.today())).days
+    return (when - (today or _market_today())).days
 
 
 def _compute_earnings_radar(rows: list[dict], max_days: int = 7) -> dict:
@@ -2049,10 +2077,11 @@ def earnings_radar(
     # validates against the catalog but is null for every US row, so the old
     # filter matched nothing and the tool reported an empty universe with no
     # error. Bounds run from the start of today to the end of the horizon day.
-    _today = dt.date.today()
-    _start = int(dt.datetime.combine(_today, dt.time.min).timestamp())
+    _tz = _market_tz()
+    _today = _market_today()
+    _start = int(dt.datetime.combine(_today, dt.time.min, tzinfo=_tz).timestamp())
     _end = int(dt.datetime.combine(_today + dt.timedelta(days=max(1, horizon)),
-                                   dt.time.max).timestamp())
+                                   dt.time.max, tzinfo=_tz).timestamp())
     base_filters.append(
         Filter(field="earnings_release_next_date", op="between", value=[_start, _end])
     )

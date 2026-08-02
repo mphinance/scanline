@@ -15,7 +15,9 @@
 // still lands on a column set the chosen market populates. Mirrors backend.
 const DEFAULT_COLUMNS = {
   america: ['name', 'description', 'close', 'change', 'volume', 'market_cap_basic', 'price_earnings_ttm', 'sector'],
-  crypto: ['name', 'close', 'change', 'volume', 'market_cap_calc', 'Value.Traded'],
+  // No Value.Traded: it is a real field but null for every crypto row, so it
+  // only ever rendered as an empty column. Mirrors backend DEFAULT_COLUMNS.
+  crypto: ['name', 'close', 'change', 'volume', 'market_cap_calc'],
   forex: ['name', 'close', 'change', 'high', 'low'],
   futures: ['name', 'close', 'change', 'volume', 'high', 'low'],
   bond: ['name', 'close', 'change', 'high', 'low'],
@@ -164,6 +166,30 @@ function injectStyles() {
       background: rgba(176, 38, 255, 0.1);
     }
     .pst-card.pst-factor.is-active .pst-name { text-shadow: 0 0 8px rgba(176, 38, 255, 0.5); }
+    /* A preset the data source cannot serve. Shown, not hidden, so the gap
+       stays visible, but it does not run: clicking it would return zero rows
+       and read as "no matches today". Mirrors run_preset refusing it. */
+    .pst-card.is-unavailable {
+      cursor: not-allowed;
+      opacity: 0.55;
+      border-left-color: var(--muted);
+    }
+    .pst-card.is-unavailable:hover {
+      border-color: var(--border-glass);
+      box-shadow: none;
+      background: var(--glass);
+    }
+    .pst-card.is-unavailable .pst-name { color: var(--muted); }
+    .pst-tag-unavailable {
+      color: var(--muted);
+      border-color: var(--muted);
+    }
+    .pst-reason {
+      font-size: 10px;
+      line-height: 1.35;
+      color: var(--muted);
+      font-style: italic;
+    }
     .pst-weights {
       font-family: var(--font-mono);
       font-size: 10px;
@@ -268,11 +294,21 @@ window.Screener.registerModule('presets', (ctx) => {
   }
 
   function buildPresetCard(preset) {
+    // A preset the data source cannot serve at all. The backend marks it and
+    // run_preset refuses it; the web path has to refuse it too, otherwise
+    // clicking it runs a screen that can only return zero rows, which reads as
+    // "no matches today" rather than "this data does not exist".
+    const unavailable = typeof preset.unavailable === 'string' && preset.unavailable;
+
     const card = document.createElement('div');
-    card.className = 'pst-card';
+    card.className = unavailable ? 'pst-card is-unavailable' : 'pst-card';
     card.setAttribute('role', 'button');
-    card.tabIndex = 0;
+    card.tabIndex = unavailable ? -1 : 0;
     card.dataset.presetId = preset.id;
+    if (unavailable) {
+      card.setAttribute('aria-disabled', 'true');
+      card.title = preset.unavailable;
+    }
 
     const top = document.createElement('div');
     top.className = 'pst-card-top';
@@ -280,7 +316,12 @@ window.Screener.registerModule('presets', (ctx) => {
     name.className = 'pst-name';
     name.textContent = preset.name || preset.id;
     top.appendChild(name);
-    if (preset.market) {
+    if (unavailable) {
+      const tag = document.createElement('span');
+      tag.className = 'pst-tag pst-tag-unavailable';
+      tag.textContent = 'unavailable';
+      top.appendChild(tag);
+    } else if (preset.market) {
       const tag = document.createElement('span');
       tag.className = 'pst-tag';
       tag.textContent = preset.market;
@@ -293,6 +334,15 @@ window.Screener.registerModule('presets', (ctx) => {
       desc.className = 'pst-desc';
       desc.textContent = preset.description;
       card.appendChild(desc);
+    }
+
+    if (unavailable) {
+      const reason = document.createElement('div');
+      reason.className = 'pst-reason';
+      reason.textContent = preset.unavailable;
+      card.appendChild(reason);
+      presetCards.set(preset.id, { card, preset });
+      return card;
     }
 
     card.addEventListener('click', () => applyPreset(preset));

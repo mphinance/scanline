@@ -167,6 +167,63 @@ def test_preset_filter_fields_are_populated_in_their_own_market():
             )
 
 
+@pytest.mark.live
+def test_displayed_and_scored_fields_are_populated_in_their_own_market():
+    """The same dead-field check, for fields that are READ rather than filtered.
+
+    The filter-field test above only walks preset filters, so a dead field that
+    is merely displayed or scored slips past it. Three did:
+
+      - Value.Traded survived in DEFAULT_COLUMNS["crypto"] and MARKET_FIELDS
+        ["crypto"] after it was taken out of the crypto_movers filter, so the
+        default crypto view still carried a permanently blank column.
+      - The Growth factor model weighted revenue_growth_ttm_yoy and
+        earnings_per_share_diluted_growth_percent_ttm_yoy at 1.0 each, and both
+        are null for every US row. apply_factor scores a missing value as 0, so
+        Growth was a pure gross_margin sort, scoring identically to a
+        gross-margin-only model on 1000 of 1000 sampled rows. A factor model
+        cannot return zero rows, so nothing about the output looked wrong.
+
+    A displayed dead field is a blank column. A scored one silently drops a
+    factor out of the model, which is worse, because the ranking still looks
+    like a ranking.
+    """
+    from backend.fields import DEFAULT_COLUMNS, MARKET_FIELDS
+    from backend.models import ScreenRequest
+    from backend.pipeline import run_screen
+
+    wanted: dict[str, set[str]] = {}
+    for market, cols in DEFAULT_COLUMNS.items():
+        wanted.setdefault(market, set()).update(cols)
+    for market, cols in MARKET_FIELDS.items():
+        wanted.setdefault(market, set()).update(cols)
+    for p in PRESETS:
+        if p.get("unavailable"):
+            continue
+        wanted.setdefault(p["market"], set()).update(p.get("columns", []) or [])
+    # Factor models are america-only and are scored, not filtered.
+    for fp in FACTOR_PRESETS:
+        for w in fp.get("weights", []) or []:
+            wanted.setdefault("america", set()).add(w["field"])
+
+    for market, fields in sorted(wanted.items()):
+        cols = sorted(fields)
+        # Chunked so one market's column set cannot outgrow a single query.
+        for i in range(0, len(cols), 40):
+            chunk = cols[i:i + 40]
+            resp = run_screen(
+                ScreenRequest(market=market, filters=[], columns=chunk, limit=200)
+            )
+            assert not resp["meta"].get("error"), f"{market}: {resp['meta']['error']}"
+            assert resp["rows"], f"{market} returned no rows at all"
+            for field in chunk:
+                populated = sum(1 for r in resp["rows"] if r.get(field) is not None)
+                assert populated, (
+                    f"{market}: '{field}' is displayed or scored but is null for "
+                    f"all {len(resp['rows'])} sampled rows"
+                )
+
+
 # --- safe_eval sandbox ---------------------------------------------------
 
 def test_safe_eval_basic_math():

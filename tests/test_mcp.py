@@ -9,6 +9,7 @@ in-memory Client, exactly as a real MCP client would.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 
 import pytest
 from fastmcp import Client
@@ -16,6 +17,7 @@ from fastmcp import Client
 from backend.mcp_server import (
     _compute_breadth,
     _compute_dividend_quality,
+    _days_to_earnings,
     _compute_earnings_radar,
     _compute_ema_stack,
     _compute_gap_scanner,
@@ -170,6 +172,44 @@ def test_run_preset_unknown_id():
 def test_run_factor_preset_unknown_id():
     out = _call("run_factor_preset", {"factor_preset_id": "does_not_exist"})
     assert "error" in out
+
+
+def test_unavailable_presets_are_refused_with_a_reason():
+    """An unavailable preset must never reach the screen path.
+
+    Running it can only return zero rows, and zero rows reads as "no matches
+    today" rather than "this data does not exist". The refusal has to carry the
+    reason, since that is the only thing distinguishing the two.
+    """
+    from backend.presets import PRESETS
+
+    unavailable = [p for p in PRESETS if p.get("unavailable")]
+    assert unavailable, "expected at least one preset marked unavailable"
+    for p in unavailable:
+        out = _call("run_preset", {"preset_id": p["id"]})
+        assert "error" in out, f"{p['id']} ran instead of being refused"
+        assert out.get("reason"), f"{p['id']} was refused without a reason"
+        assert out.get("count") == 0
+        assert out.get("rows") == []
+
+
+def test_unavailable_reason_is_exposed_to_the_web_client():
+    """list_presets and /api/presets must both carry the flag.
+
+    The MCP path refuses these up front, but the web UI builds its own request
+    from the preset body, so it can only refuse what the payload tells it about.
+    Without this the browser silently runs the scan the MCP server declines.
+    """
+    from backend.app import presets as presets_endpoint
+    from backend.presets import PRESETS
+
+    expected = {p["id"] for p in PRESETS if p.get("unavailable")}
+
+    listed = {p["id"] for p in _call("list_presets") if p.get("unavailable")}
+    assert listed == expected
+
+    served = {p["id"] for p in presets_endpoint()["presets"] if p.get("unavailable")}
+    assert served == expected
 
 
 # --- live screen path ----------------------------------------------------
@@ -1426,6 +1466,46 @@ def test_compute_earnings_radar_bucket_classification():
     assert result["by_bucket"]["today"] == 1
     assert result["by_bucket"]["this_week"] == 2
     assert result["by_bucket"]["later"] == 2
+
+
+def test_days_to_earnings_does_not_depend_on_the_host_timezone():
+    """The day count must come from the market's clock, not the server's.
+
+    earnings_release_next_date is a real UTC instant (the 1787774400 below is
+    NVDA's, 20:00 UTC, the 4pm ET after-close slot). Converting it with the
+    host's local timezone made the answer depend on where the process ran: the
+    same row read 24 days out from New York and 25 from Tokyo, so "reports
+    today" silently became "reports tomorrow" past a certain longitude.
+    """
+    import os
+    import time as _time
+
+    ts = 1787774400  # 2026-08-26 20:00 UTC
+    today = dt.date(2026, 8, 2)
+    seen = set()
+    original = os.environ.get("TZ")
+    try:
+        for tz in ("UTC", "America/New_York", "Asia/Tokyo", "Australia/Sydney"):
+            os.environ["TZ"] = tz
+            if hasattr(_time, "tzset"):
+                _time.tzset()
+            seen.add(_days_to_earnings(ts, today))
+    finally:
+        if original is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = original
+        if hasattr(_time, "tzset"):
+            _time.tzset()
+
+    assert len(seen) == 1, f"day count varies with the host timezone: {seen}"
+    assert seen == {24}
+
+
+def test_days_to_earnings_rejects_non_numeric():
+    assert _days_to_earnings(None) is None
+    assert _days_to_earnings("2026-08-26") is None
+    assert _days_to_earnings(True) is None  # bool is an int subclass
 
 
 def test_compute_earnings_radar_sector_breakdown():
