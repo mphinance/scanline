@@ -44,6 +44,7 @@ backend/        FastAPI app + the screen engine
   models.py       pydantic request/response models
   cache.py        in-memory TTL cache
   mcp_server.py   the MCP server (fastmcp): 27 tools, 4 prompts, 3 resources
+  cli.py          host/port resolution behind the `scanline` command and run.py
 frontend/       vanilla JS, ES modules registering via window.Screener.registerModule
   css/theme.css   the synthwave design tokens (the source of truth for the look)
   js/             feature modules (filters, columns, presets, factor, table, detail, openin, ...)
@@ -53,6 +54,9 @@ docs/           screenshots + capture scripts + ARCHITECTURE.md + MCP.md
 tests/          pytest (analytics math, MCP wiring, live API smoke)
 run.py          launches the web app on 127.0.0.1:8000
 run_mcp.py      launches the MCP server (stdio, or --http PORT)
+pyproject.toml  packaging + the `scanline` / `scanline-mcp` entry points
+Dockerfile      slim image, non-root, healthchecked
+docker-compose.yml  `docker compose up`, plus an opt-in `mcp` profile
 ```
 
 ## Run it
@@ -63,6 +67,14 @@ pip install -r requirements.txt
 python run.py        # web app at http://127.0.0.1:8000/
 python run_mcp.py    # MCP server over stdio (--http 8765 for streamable-http)
 ```
+
+Installed (`pip install .`) the same two are on PATH as `scanline` and
+`scanline-mcp`, and `docker compose up` runs the web app in a container. The web
+app resolves host and port from flags, then `SCANLINE_HOST` / `SCANLINE_PORT`,
+then the loopback default. See `backend/cli.py`.
+
+Keep `requirements.txt` and the `dependencies` list in `pyproject.toml` in step:
+the checkout path installs from the first, `pip install .` resolves the second.
 
 ## Test it
 

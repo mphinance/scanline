@@ -44,6 +44,7 @@
       <a href="#widgets">Widgets</a>
       <a href="#build">Build your own</a>
       <a href="#mcp">AI / MCP</a>
+      <a href="#install">Run it</a>
       <a href="https://github.com/mphinance/scanline">GitHub</a>
     </div>
   </div>
@@ -258,10 +259,7 @@
 <pre><span class="c-com"># claude_desktop_config.json</span>
 {
   <span class="c-key">"mcpServers"</span>: {
-    <span class="c-key">"scanline"</span>: {
-      <span class="c-key">"command"</span>: <span class="c-str">"/abs/path/.venv/bin/python"</span>,
-      <span class="c-key">"args"</span>: [<span class="c-str">"/abs/path/run_mcp.py"</span>]
-    }
+    <span class="c-key">"scanline"</span>: { <span class="c-key">"command"</span>: <span class="c-str">"scanline-mcp"</span> }
   }
 }
 
@@ -276,7 +274,7 @@ timeframes mixed (1w/1m bull, 1h/4h/1d bear).
 </pre>
       </div>
       <div>
-        <p style="color:var(--muted);margin-top:0">16 MCP tools and 4 canned prompts. The screening engine, plus symbol intelligence:</p>
+        <p style="color:var(--muted);margin-top:0">27 MCP tools and 4 canned prompts. The screening engine, plus symbol intelligence:</p>
         <div class="toollist">
           <span class="pill"><b>analyze</b> chart read, all timeframes</span>
           <span class="pill"><b>screen</b> filters + factors + stats</span>
@@ -287,7 +285,49 @@ timeframes mixed (1w/1m bull, 1h/4h/1d bear).
           <span class="pill"><b>search_symbols</b></span>
           <span class="pill"><b>run_factor_preset</b></span>
         </div>
-        <p style="margin-top:18px"><a class="btn" href="https://github.com/mphinance/scanline">Get the screener</a></p>
+        <p style="margin-top:18px"><a class="btn" href="#install">Get the screener</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Install -->
+<section id="install">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Run it yourself</div>
+      <h2>Three ways in</h2>
+      <p>The screener runs on your own machine. There is no hosted version and there is not going to be one: a screen should come from the person reading it, at human scale, the same way your browser talks to TradingView when you open the site. No account, no API key, nothing to sign up for.</p>
+    </div>
+    <div class="mcp">
+      <div class="codeblock">
+<pre><span class="c-com"># 1. Docker, nothing else installed</span>
+git clone https://github.com/mphinance/scanline
+cd scanline
+docker compose up
+
+<span class="c-com"># 2. From a checkout</span>
+pip install -r requirements.txt
+python run.py
+
+<span class="c-com"># 3. As a command, from anywhere</span>
+pip install git+https://github.com/mphinance/scanline
+scanline           <span class="c-com"># the web app</span>
+scanline-mcp       <span class="c-com"># the MCP server</span>
+</pre>
+      </div>
+      <div>
+        <p style="color:var(--muted);margin-top:0">All three serve the same thing at <span class="mono">127.0.0.1:8000</span>: the full screener, the analytics layer, and the HTTP API. Loopback only unless you say otherwise.</p>
+        <div class="toollist">
+          <span class="pill"><b>MIT</b> licensed</span>
+          <span class="pill"><b>no build step</b> on the frontend</span>
+          <span class="pill"><b>no account</b> needed</span>
+          <span class="pill"><b>read-only</b>, no order execution</span>
+        </div>
+        <p style="margin-top:18px">
+          <a class="btn" href="https://github.com/mphinance/scanline">Source on GitHub</a>
+          <a class="btn alt" href="https://github.com/mphinance/scanline/blob/master/docs/MCP.md" style="margin-left:8px">MCP reference</a>
+        </p>
       </div>
     </div>
   </div>

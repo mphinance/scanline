@@ -31,6 +31,37 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **2026-08-02** Packaging, so people can actually run this. Three install paths
+  now: `docker compose up`, the existing `pip install -r requirements.txt` plus
+  `python run.py` from a checkout, and `pip install .` which puts `scanline` and
+  `scanline-mcp` on PATH. New `pyproject.toml` (hatchling) declares both console
+  scripts and force-includes `frontend/` into the wheel as `scanline_frontend`,
+  since the static assets live outside the Python package and an installed wheel
+  has to carry them somewhere importable. `backend/app.py` grew `_find_frontend()`
+  to match: it checks `SCANLINE_FRONTEND_DIR`, then the sibling `frontend/` of a
+  checkout, then the packaged `scanline_frontend/`, and tolerates finding none
+  (an API-only install still serves `/api`). Host and port moved out of `run.py`
+  into `backend/cli.py`, resolved from flags, then `SCANLINE_HOST` /
+  `SCANLINE_PORT`, then the loopback default; `run.py` is now a four-line
+  delegate so the documented command keeps working and gained flags for free.
+  The default stays 127.0.0.1 on purpose: this app proxies an upstream source,
+  so binding every interface should be a deliberate act. The Dockerfile sets
+  `SCANLINE_HOST=0.0.0.0` because publishing a container port already is one.
+  Image is python:3.12-slim, deps in their own cached layer, runs as uid 10001,
+  and healthchecks with the stdlib since slim has no curl. Verified end to end:
+  the wheel installs clean into an empty venv and serves the frontend from
+  site-packages, and the built image runs non-root, answers `/api/health`, serves
+  the index, reports `healthy`, and passes all 157 offline tests inside the
+  container. Docs reframed away from positioning against TradingView and toward
+  what this adds on top of them, since the project is a showcase of their
+  platform, not a competitor to it: the README's "Versus the TradingView web
+  screener" section is now "What this adds on top" and ends on the point that
+  every row deep-links back into TradingView. The showcase gained a "Run it
+  yourself" section with the three install paths and a nav link, and its MCP
+  config snippet (and the README's, and `docs/MCP.md`'s) collapsed from absolute
+  interpreter paths to `{"command": "scanline-mcp"}`, plus `claude mcp add`.
+  Fixed a stale "16 MCP tools" claim on the showcase; it is 27.
+
 - **Nightly 2026-07-02** Added `dividend_screen` MCP tool. Finds high-quality
   dividend-paying stocks ranked by a composite Dividend Quality Score (`dq_score`,
   0-100 percentile within the sample). Three components feed the score: a yield

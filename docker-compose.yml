@@ -1,0 +1,30 @@
+# The shortest path to a running Scanline:
+#
+#   docker compose up
+#
+# Builds the image on first run and serves the screener at
+# http://127.0.0.1:8000/. Stop with Ctrl-C.
+#
+# The MCP server over HTTP is opt in, since the usual way to run it is stdio
+# on your own machine (see README). To start it alongside the web app:
+#
+#   docker compose --profile mcp up
+
+services:
+  scanline:
+    build: .
+    image: scanline
+    # Bound to loopback on the host. The container listens on all interfaces
+    # inside its own namespace; this is what decides who can reach it.
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  scanline-mcp:
+    profiles: ["mcp"]
+    build: .
+    image: scanline
+    command: ["scanline-mcp", "--http", "8765"]
+    ports:
+      - "127.0.0.1:8765:8765"
+    restart: unless-stopped

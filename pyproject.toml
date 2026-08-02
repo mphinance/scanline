@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scanline"
+version = "1.0.0"
+description = "A live market screener with a quant analytics layer and an MCP server, built on TradingView data."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Michael Hanko" }]
+keywords = ["tradingview", "screener", "market", "mcp", "finance"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+# Kept in step with requirements.txt by hand. requirements.txt stays the
+# documented path for a checkout; this list is what `pip install scanline`
+# resolves. pytest is deliberately not here, it lives in the dev extra.
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "tradingview-screener>=3.0",
+    "pandas>=2.0",
+    "requests>=2.31",
+    "fastmcp>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/mphinance/scanline"
+Showcase = "https://mphinance.github.io/scanline/"
+Source = "https://github.com/mphinance/scanline"
+
+[project.scripts]
+# The two things a user runs. Both work from a checkout via run.py and
+# run_mcp.py as well, so the documented commands in CLAUDE.md keep working.
+scanline = "backend.cli:main"
+scanline-mcp = "backend.mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend"]
+
+# The frontend is static assets that live outside the Python package, so an
+# installed wheel has to carry them somewhere importable. backend/app.py looks
+# for this location when the sibling frontend/ folder of a checkout is absent.
+[tool.hatch.build.targets.wheel.force-include]
+"frontend" = "scanline_frontend"
