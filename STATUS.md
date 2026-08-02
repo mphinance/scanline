@@ -31,6 +31,38 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 
 ## Wave log
 
+- **2026-08-02 (follow-up)** Second review pass on the packaging work, after it
+  merged as #18. Three confirmed bugs, all in the new code. The worst failed
+  open: `backend/cli.py` resolved the host with
+  `os.environ.get("SCANLINE_HOST", DEFAULT_HOST)`, and a variable that is set
+  but empty returns `""`, not the default, which uvicorn reads as INADDR_ANY.
+  So `SCANLINE_HOST=` in a compose environment list, a bare line in a .env, or
+  `export SCANLINE_HOST=` in a wrapper silently published the screener on every
+  interface while the docstring, README, and STATUS all promised loopback. Now
+  resolved through `_env_host()`, which strips and falls back the way
+  `_env_port()` already did, plus a normalization after parsing so an explicit
+  `--host ""` cannot widen the bind either. Five tests pin it, including the
+  set-but-empty and whitespace cases in both the env and the flag, because the
+  failure is invisible until the wrong people can reach the port. The MCP
+  server's host resolution already stripped and so was never affected.
+  Second: the image healthcheck hardcoded port 8000 while `SCANLINE_PORT` was
+  documented as configurable, so any container on another port reported
+  unhealthy while serving fine, which would break `depends_on:
+  condition: service_healthy`. It reads the env var now. Verified by running
+  containers on 9000 and on the default at once: both report healthy, both
+  answer `/api/health` 200, where the 9000 one went unhealthy before.
+  Third: the Dockerfile's own header documented `docker run -p 8000:8000`,
+  publishing on every host interface, which contradicted the loopback scoping
+  that docker-compose.yml already got right and pairs badly with the API's
+  `allow_origins=["*"]`. Now `-p 127.0.0.1:8000:8000`, with a note saying why.
+  Also fixed `--reload` watching `os.getcwd()` instead of the source tree, so
+  running it from `$HOME` no longer recursively watches the home directory.
+  Left alone deliberately: the wheel installs `backend/` and `scanline_frontend/`
+  as top-level names in site-packages, which is a real collision risk with any
+  other distribution shipping a top-level `backend`. Fixing it means moving to
+  a real `scanline/` package, which is a restructure worth doing on purpose
+  rather than folding into a bug-fix pass. Suite is 162 offline now.
+
 - **2026-08-02** Packaging, so people can actually run this. Three install paths
   now: `docker compose up`, the existing `pip install -r requirements.txt` plus
   `python run.py` from a checkout, and `pip install .` which puts `scanline` and
