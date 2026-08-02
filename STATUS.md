@@ -378,6 +378,11 @@ scored still got through.
 - **`unavailable` was only honored on the MCP path.** `run_preset` refuses `high_short_interest`,
   but `/api/presets` ships the preset and the web UI ran it, returning zero rows that read as
   "no matches today". The preset card is now disabled and states the reason.
+- **`gap_scanner` never returned a single gap down.** It ran one query sorted by `gap`
+  descending and kept the top `limit` rows, which is the largest positive gaps and nothing
+  else: the top 500 window ran from +334900% to +5.9% with no negative in it, so
+  `gap_down_count` was 0 on a session where 210 of 1000 sampled rows had gapped down 1% or
+  more. Now queries both tails and dedupes by ticker.
 - **`earnings_radar` day buckets depended on the host timezone.**
   `earnings_release_next_date` is a real UTC instant, and converting it with local time meant
   the same row read 24 days out from New York and 25 from Tokyo. Both the query window and the
@@ -387,7 +392,7 @@ scored still got through.
   never have run. Added mechanical house-rule checks (no em dashes, no byte order marks; the
   audit branch had introduced a BOM at the top of this file) and a daily `live.yml` running the
   full suite, since only a live call can catch a dead field.
-- Four new tests. Suite: 150 offline, 32 live, 182 total.
+- Five new tests. Suite: 150 offline, 33 live, 183 total.
 
 ## Known notes
 - Crypto/forex/bond/cfd scans are huge (tens of thousands of rows). The default limit is 150; raise
