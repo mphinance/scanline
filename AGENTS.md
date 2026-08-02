@@ -43,7 +43,7 @@ backend/        FastAPI app + the screen engine
   presets.py      47 preset scans + 5 factor presets
   models.py       pydantic request/response models
   cache.py        in-memory TTL cache
-  mcp_server.py   the MCP server (fastmcp): 16 tools, 4 prompts, 3 resources
+  mcp_server.py   the MCP server (fastmcp): 27 tools, 4 prompts, 3 resources
 frontend/       vanilla JS, ES modules registering via window.Screener.registerModule
   css/theme.css   the synthwave design tokens (the source of truth for the look)
   js/             feature modules (filters, columns, presets, factor, table, detail, openin, ...)
@@ -69,11 +69,19 @@ python run_mcp.py    # MCP server over stdio (--http 8765 for streamable-http)
 ```bash
 python -m pytest tests/ -q -m "not live"   # offline: analytics + MCP wiring (fast, no network)
 python -m pytest tests/ -q                  # add the live tests (hits TradingView)
-node --test frontend/js/store.test.mjs frontend/js/openin.test.mjs   # frontend logic
+node --test frontend/js/*.test.mjs           # frontend logic
 ```
 
-CI (`.github/workflows/ci.yml`) runs the offline suite on every push. Live tests
-are skipped in CI on purpose so the build is deterministic.
+CI (`.github/workflows/ci.yml`) runs the offline suite plus the frontend tests on
+every push and pull request, and enforces the house rules that are mechanical
+(no em dashes, no byte order marks). Live tests are skipped there on purpose so
+an upstream outage never reds a pull request.
+
+`.github/workflows/live.yml` runs the full suite including the live tests daily.
+That job is the only thing that can catch a dead field: `validate_field` is
+global, so a field can pass validation and still be null for every row in a
+given market, which is how several scans and the Growth factor model ended up
+returning nothing (or ranking on nothing) while reporting success.
 
 ## Architecture in one paragraph
 
@@ -87,7 +95,7 @@ over the returned rows. The HTTP endpoint and the MCP `screen` tool both call
 ## The MCP server
 
 `backend/mcp_server.py` exposes the same engine over the Model Context Protocol
-with `fastmcp`. 16 tools (screening + symbol intelligence), 4 prompts, 3
+with `fastmcp`. 27 tools (screening, symbol intelligence, market studies), 4 prompts, 3
 resources. The centerpiece is `analyze`, a multi-timeframe chart read (RSI and
 MACD bias on the 1h/4h/1d/1w/1m at once). Full reference and config in
 `docs/MCP.md`.

@@ -8,7 +8,7 @@ below.
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt pytest
+pip install -r requirements.txt
 python run.py        # web app at http://127.0.0.1:8000/
 python run_mcp.py    # MCP server over stdio
 ```
@@ -18,10 +18,17 @@ python run_mcp.py    # MCP server over stdio
 ```bash
 python -m pytest tests/ -q -m "not live"   # offline (fast, no network): run this before every commit
 python -m pytest tests/ -q                  # include live tests (hits TradingView)
-node --test frontend/js/store.test.mjs frontend/js/openin.test.mjs
+node --test frontend/js/*.test.mjs
 ```
 
-CI runs the offline suite on every push (`.github/workflows/ci.yml`). Keep it green.
+CI runs the offline suite, the frontend tests, and the mechanical house-rule
+checks on every push and pull request (`.github/workflows/ci.yml`). Keep it green.
+
+The live tests run on a daily schedule instead (`.github/workflows/live.yml`),
+because they hit TradingView and an outage should never red a pull request. They
+are also the only tests that can catch a field that is real but null in a given
+market, so run them yourself before changing a preset, a factor model, or a
+default column set.
 
 ## House rules (non-negotiable)
 

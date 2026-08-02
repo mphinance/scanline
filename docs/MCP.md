@@ -32,7 +32,11 @@ Then ask in plain language, for example: "Screen US mega caps with RSI under 35,
 add a dollar-volume column, and rank them by my Value factor," or "Read NVDA
 across timeframes and chart it."
 
-## Tools (16)
+## Tools (27)
+
+Every tool also carries a full docstring, which is what an MCP client actually
+reads when choosing between them. The market-study tools below carry the most
+detailed ones.
 
 ### Screening
 
@@ -44,7 +48,14 @@ across timeframes and chart it."
   adds `zscore`/`pctrank`/`rank`/`norm` across the result, `factor` is a weighted
   direction-aware composite score. Returns `{count, returned, market, ms,
   columns, rows, table}`.
-- **`run_preset(preset_id, limit)`** Run one of the 47 named preset scans.
+- **`run_preset(preset_id, limit, include_otc)`** Run one of the 47 named preset
+  scans. The 25 signal/momentum/trend/MTF presets exclude OTC by default, because
+  an indicator reading on a sub-penny shell is computed from noise: those rows
+  carry "changes" like +9,900 percent, which is a $0.0001 tick expressed as a
+  percentage. It is a data quality filter only, with NO market cap or share price
+  floor, so genuine small and cheap listed names still come back. When the guard
+  is on, the response carries an `otc_guard` block reporting how many rows it
+  removed, so nothing is dropped silently. Pass `include_otc=True` to lift it.
 - **`run_factor_preset(factor_preset_id, market, filters, columns, limit)`** Rank
   a market by a named factor (Momentum, Value, Quality, Growth, Low-Vol).
 - **`lookup_symbol(ticker, market, columns)`** One row by exact ticker.
@@ -73,6 +84,35 @@ across timeframes and chart it."
   plus a ready-to-embed Advanced Chart widget config.
 - **`sector_breakdown(market, filters, limit)`** Aggregate a screen by sector:
   count, average change, total market cap.
+
+### Market studies
+
+Each of these runs one broad screen and reduces it to a structured read, rather
+than handing back rows. All take an optional `filters` list you can narrow with.
+
+- **`top_movers(market, n, filters, columns)`** The top N gainers and top N
+  losers in one call.
+- **`volume_leaders(market, min_rvol, filters, limit, top)`** Names trading on
+  unusual volume right now, classified by price direction.
+- **`new_highs_lows(market, filters, threshold, limit)`** Stocks at or near their
+  52 week highs and lows. A classic breadth gauge.
+- **`market_breadth(market, filters, limit)`** Advancers and decliners, percent
+  above key moving averages, and the RSI distribution.
+- **`sector_rotation(market, filters, limit)`** Sectors ranked by multi-timeframe
+  momentum. A rotation dashboard.
+- **`momentum_consistency(market, direction, min_aligned, filters, limit, top)`**
+  Ranks names by how consistently returns align across five timeframes.
+- **`relative_strength_leaders(market, filters, limit, top)`** Names outperforming
+  their own sector peers, not just the index.
+- **`ema_stack_scan(market, min_stack, filters, limit, top)`** Ranks by EMA and
+  SMA stack alignment. A bull-stack breadth indicator.
+- **`gap_scanner(market, min_gap_pct, filters, limit, top)`** Names that gapped at
+  the open, with intraday fill progress tracked.
+- **`earnings_radar(market, horizon, filters, limit, top)`** Names reporting
+  earnings within the next N days. Company earnings only. This is NOT an economic
+  calendar and carries no macro releases.
+- **`dividend_screen(market, min_yield, min_years_growing, filters, limit, top)`**
+  Dividend payers ranked by a composite Dividend Quality Score.
 
 ## Prompts (4)
 

@@ -24,6 +24,7 @@ Design notes, informed by the existing TradingView MCP servers:
 
 from __future__ import annotations
 
+import datetime as dt
 import sys
 import time
 from typing import Any
@@ -117,8 +118,18 @@ def rating_label(score: float | None) -> str:
     return "Strong Sell"
 
 
-def _resolve_row(symbol: str, market: str, columns: list[str]) -> dict | None:
-    """Fetch one row by ticker symbol (case-insensitive on `name`)."""
+def _resolve_row(symbol: str, market: str, columns: list[str]) -> tuple[dict | None, str | None]:
+    """Fetch one row by ticker symbol (case-insensitive on `name`).
+
+    Returns (row, error). Callers must treat those as different outcomes.
+
+    run_screen never raises. On an upstream failure it returns no rows plus
+    meta.error, so reading only the rows turns a dead or rate limited data
+    source into "no such symbol", which is a confident false statement about a
+    ticker that is perfectly real. Every other run_screen caller in this module
+    reads meta.error. This one did not, and it backs the analyze and
+    technical_rating tools, the two used to look at a single name in depth.
+    """
     cols = [c for c in columns if validate_field(c)] or ["name"]
     req = ScreenRequest(
         market=market,
@@ -127,8 +138,24 @@ def _resolve_row(symbol: str, market: str, columns: list[str]) -> dict | None:
         limit=1,
     )
     resp = run_screen(req)
+    err = (resp.get("meta") or {}).get("error")
+    if err:
+        _STATS["errors"] += 1
+        return None, err
     rows = resp.get("rows") or []
-    return rows[0] if rows else None
+    return (rows[0] if rows else None), None
+
+
+def _unavailable(ticker: str, err: str) -> dict:
+    """The response for "we could not check", as distinct from "it does not exist"."""
+    return {
+        "error": f"Data source unavailable, so '{ticker.upper()}' could not be checked.",
+        "detail": err,
+        "symbol_exists": "unknown",
+        "note": ("This is NOT a statement that the symbol does not exist. The screen "
+                 "itself failed. Retry, or confirm the name from another source before "
+                 "concluding anything about it."),
+    }
 
 
 # ----------------------------------------------------------------------------
@@ -266,15 +293,18 @@ def list_presets(group: str = "") -> list[dict]:
     for p in PRESETS:
         if g and p.get("group", "").lower() != g:
             continue
-        out.append(
-            {
-                "id": p["id"],
-                "name": p["name"],
-                "description": p["description"],
-                "market": p["market"],
-                "group": p.get("group", "General"),
-            }
-        )
+        entry = {
+            "id": p["id"],
+            "name": p["name"],
+            "description": p["description"],
+            "market": p["market"],
+            "group": p.get("group", "General"),
+        }
+        if p.get("unavailable"):
+            entry["unavailable"] = p["unavailable"]
+        if p.get("otc_guarded"):
+            entry["otc_guarded"] = True
+        out.append(entry)
     return out
 
 
@@ -358,24 +388,81 @@ def screen(
 
 
 @mcp.tool
-def run_preset(preset_id: str, limit: int = 50) -> dict:
+def run_preset(preset_id: str, limit: int = 50, include_otc: bool = False) -> dict:
     """Run a named preset scan (see list_presets) and return its rows.
 
     The preset supplies the market, filters, columns, and sort. `limit` caps
     the rows returned.
+
+    Most signal presets exclude OTC by default, because an indicator reading on a
+    sub-penny shell is computed from noise rather than from a trend: those rows
+    carry "changes" like +9,900 percent, which is a $0.0001 tick expressed as a
+    percentage. This is a data quality filter only. There is NO market cap or
+    share price floor, so genuine small and cheap listed names still come back.
+
+    Set include_otc=True to lift it and scan the full venue, deliberately. When
+    the guard is active the response carries an `otc_guard` block reporting how
+    many rows it removed, so nothing is dropped silently.
     """
     preset = next((p for p in PRESETS if p["id"] == preset_id), None)
     if preset is None:
         return {"error": f"Unknown preset: {preset_id}. See list_presets()."}
+    if preset.get("unavailable"):
+        # Refuse up front rather than running a screen that can only return
+        # nothing. An empty result reads as "no matches today", which is a very
+        # different claim from "this data does not exist".
+        _STATS["errors"] += 1
+        return {
+            "error": f"Preset '{preset_id}' is unavailable on this data source.",
+            "reason": preset["unavailable"],
+            "count": 0,
+            "rows": [],
+        }
+
+    filters = list(preset.get("filters", []))
+    guarded = bool(preset.get("otc_guarded"))
+    if guarded and include_otc:
+        filters = [f for f in filters if f.get("field") != "exchange"]
+
     req = ScreenRequest(
         market=preset["market"],
-        filters=[Filter(**f) for f in preset.get("filters", [])],
+        filters=[Filter(**f) for f in filters],
         columns=preset.get("columns", []),
         match=preset.get("match", "all"),
         sort=[SortKey(**s) for s in preset.get("sort", [])],
         limit=limit,
     )
-    return _run(req, table_rows=min(limit, 50))
+    out = _run(req, table_rows=min(limit, 50))
+
+    if guarded and not include_otc and "error" not in out:
+        # One cheap limit=1 probe: run_screen returns the FULL match count
+        # regardless of limit, so this costs one small query and turns a silent
+        # exclusion into a reported one.
+        probe = ScreenRequest(
+            market=preset["market"],
+            filters=[Filter(**f) for f in filters if f.get("field") != "exchange"],
+            columns=["name"],
+            match=preset.get("match", "all"),
+            limit=1,
+        )
+        unfiltered = run_screen(probe)
+        total = unfiltered["count"] if not unfiltered["meta"].get("error") else None
+        out["otc_guard"] = {
+            "active": True,
+            "matches_excluding_otc": out.get("count"),
+            "matches_including_otc": total,
+            "excluded": (total - out["count"]) if isinstance(total, int) else "unknown",
+            "note": "OTC excluded as a data quality filter. "
+                    "No market cap or price floor is applied. "
+                    "Pass include_otc=True to scan the full venue.",
+        }
+    elif guarded and include_otc and "error" not in out:
+        out["otc_guard"] = {
+            "active": False,
+            "note": "OTC guard lifted by include_otc=True. Expect sub-penny shells "
+                    "whose indicator values are computed from noise.",
+        }
+    return out
 
 
 @mcp.tool
@@ -531,7 +618,9 @@ def technical_rating(ticker: str, market: str = "america", timeframes: list[str]
         suffix = "" if code == "D" else f"|{code}"
         tf_cols[tf] = {b: f"{b}{suffix}" for b in base}
         wanted += list(tf_cols[tf].values())
-    row = _resolve_row(ticker, market, wanted)
+    row, err = _resolve_row(ticker, market, wanted)
+    if err:
+        return _unavailable(ticker, err)
     if row is None:
         return {"error": f"No symbol '{ticker.upper()}' in market '{market}'."}
 
@@ -593,7 +682,9 @@ def analyze(ticker: str, market: str = "america") -> dict:
     Returns {ticker, close, change, trend, momentum, multi_timeframe, range,
     rating, performance, signals[], summary}.
     """
-    row = _resolve_row(ticker, market, _READ_COLUMNS)
+    row, err = _resolve_row(ticker, market, _READ_COLUMNS)
+    if err:
+        return _unavailable(ticker, err)
     if row is None:
         return {"error": f"No symbol '{ticker.upper()}' in market '{market}'."}
 
@@ -767,7 +858,9 @@ def chart(ticker: str, market: str = "america", interval: str = "1d", theme: str
 
     Returns {symbol, interval, chart_url, widget:{script,config}, embed_html}.
     """
-    row = _resolve_row(ticker, market, ["name", "description"])
+    # chart only needs a symbol string for the URL, so a failed lookup is not fatal
+    # here. It falls back to the raw ticker and the widget still renders.
+    row, _err = _resolve_row(ticker, market, ["name", "description"])
     full = (row or {}).get("ticker") or ticker.upper()
     code = normalize_interval(interval)
     chart_url = f"https://www.tradingview.com/chart/?symbol={full}&interval={code}"
@@ -1818,12 +1911,60 @@ def ema_stack_scan(
     }
 
 
+def _market_tz() -> dt.tzinfo | None:
+    """US market timezone, or None to fall back to the host's local time.
+
+    earnings_release_next_date is a real UTC instant (NVDA reads 20:00 UTC, the
+    4pm ET after-close slot), so turning it into a CALENDAR DAY needs a fixed
+    reference. Using the host's timezone made "reports today" depend on where the
+    server happened to run: the same row buckets one day later from Tokyo than
+    from New York. The market's own clock is the honest anchor for a US equities
+    scan, so both the query window and the day count use it.
+
+    Returns None when the tz database is unavailable (a bare Windows install
+    without `tzdata`), which restores the previous local-time behaviour rather
+    than failing the scan.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo("America/New_York")
+    except Exception:
+        return None
+
+
+def _market_today() -> dt.date:
+    """Today's date on the market's clock (see _market_tz)."""
+    return dt.datetime.now(_market_tz()).date()
+
+
+def _days_to_earnings(ts: Any, today: dt.date | None = None) -> int | None:
+    """Whole days from today to an earnings timestamp, or None.
+
+    TradingView exposes a `days_to_earnings` field and it validates against the
+    catalog, but it is NULL for every US row, so filtering on it returned nothing
+    while reporting success. `earnings_release_next_date` is populated (150 of 150
+    sampled) and is a unix timestamp, so the number is derived from that instead.
+
+    Compared as DATES rather than elapsed seconds, so an announcement later today
+    is 0 and not a fraction that floors to the wrong bucket. Both sides of that
+    subtraction resolve in MARKET time, not the host's. See _market_tz.
+    """
+    if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+        return None
+    try:
+        when = dt.datetime.fromtimestamp(float(ts), _market_tz()).date()
+    except (OverflowError, OSError, ValueError):
+        return None
+    return (when - (today or _market_today())).days
+
+
 def _compute_earnings_radar(rows: list[dict], max_days: int = 7) -> dict:
     """Identify stocks with upcoming earnings and group them by timing bucket.
 
-    Filters to rows where days_to_earnings is an integer in [0, max_days].
-    Returns a sector breakdown and the individual stock list sorted by
-    days_to_earnings ascending (earnings today first).
+    Keeps rows whose derived days-to-earnings is in [0, max_days]. Returns a
+    sector breakdown and the individual stock list sorted by days_to_earnings
+    ascending (earnings today first).
 
     Timing buckets:
       "today"     days_to_earnings == 0
@@ -1833,12 +1974,18 @@ def _compute_earnings_radar(rows: list[dict], max_days: int = 7) -> dict:
     Each stock entry carries: name, close, change, sector, market_cap_basic,
     days_to_earnings, bucket, rsi, atrp (ATR % as proxy for expected range),
     perf_1m.
-    Rows without a numeric days_to_earnings are silently skipped.
+    Rows with no usable earnings date are silently skipped.
     """
     stocks: list[dict] = []
     for row in rows:
+        # Prefer a literal days_to_earnings when a row actually carries one, and
+        # derive from the timestamp otherwise. TradingView leaves the literal null
+        # on every US row today, but accepting both keeps this function working on
+        # either shape rather than tying it to one provider quirk.
         dte = row.get("days_to_earnings")
         if not isinstance(dte, (int, float)) or isinstance(dte, bool):
+            dte = _days_to_earnings(row.get("earnings_release_next_date"))
+        if dte is None:
             continue
         dte_int = int(dte)
         if not (0 <= dte_int <= max_days):
@@ -1926,17 +2073,26 @@ def earnings_radar(
     bucket,rsi,atrp,perf_1m}]}.
     """
     base_filters = [Filter(**f) for f in (filters or [])]
+    # Window on earnings_release_next_date, not days_to_earnings: the latter
+    # validates against the catalog but is null for every US row, so the old
+    # filter matched nothing and the tool reported an empty universe with no
+    # error. Bounds run from the start of today to the end of the horizon day.
+    _tz = _market_tz()
+    _today = _market_today()
+    _start = int(dt.datetime.combine(_today, dt.time.min, tzinfo=_tz).timestamp())
+    _end = int(dt.datetime.combine(_today + dt.timedelta(days=max(1, horizon)),
+                                   dt.time.max, tzinfo=_tz).timestamp())
     base_filters.append(
-        Filter(field="days_to_earnings", op="between", value=[0, max(1, horizon)])
+        Filter(field="earnings_release_next_date", op="between", value=[_start, _end])
     )
     req = ScreenRequest(
         market=market,
         filters=base_filters,
         columns=[
             "name", "close", "change", "sector", "market_cap_basic",
-            "days_to_earnings", "RSI", "ATRP", "Perf.1M",
+            "earnings_release_next_date", "RSI", "ATRP", "Perf.1M",
         ],
-        sort=[SortKey(field="days_to_earnings", dir="asc")],
+        sort=[SortKey(field="earnings_release_next_date", dir="asc")],
         limit=max(1, min(limit, 2000)),
     )
     resp = run_screen(req)
@@ -2100,27 +2256,50 @@ def gap_scanner(
     is_holding, is_filled, volume, rvol}],
     gap_down:[same shape]}.
     """
-    req = ScreenRequest(
-        market=market,
-        filters=[Filter(**f) for f in (filters or [])],
-        columns=[
-            "name", "close", "open", "change", "sector",
-            "gap", "volume", "relative_volume_10d_calc",
-        ],
-        sort=[SortKey(field="gap", dir="desc")],
-        limit=max(1, min(limit, 2000)),
-    )
-    resp = run_screen(req)
-    if resp["meta"].get("error"):
-        _STATS["errors"] += 1
-        return {"error": resp["meta"]["error"]}
+    # BOTH tails, one query each. A single query sorted by gap descending takes
+    # the largest POSITIVE gaps and nothing else: measured on america, the top
+    # 500 window ran from +334900% down to +5.9% with not one negative in it, so
+    # gap_down was always empty and gap_down_count always 0. That is a confident
+    # "nothing gapped down today" on a session where 210 of 1000 sampled rows had
+    # gapped down 1% or more. The limit is split so the total sampled still
+    # matches what `limit` advertises.
+    base = [Filter(**f) for f in (filters or [])]
+    cols = [
+        "name", "close", "open", "change", "sector",
+        "gap", "volume", "relative_volume_10d_calc",
+    ]
+    half = max(1, min(limit, 2000) // 2)
 
-    result = _compute_gap_scanner(resp["rows"], min_gap_pct=min_gap_pct)
+    rows: list[dict] = []
+    seen: set = set()
+    universe = 0
+    for direction in ("desc", "asc"):
+        resp = run_screen(ScreenRequest(
+            market=market,
+            filters=base,
+            columns=cols,
+            sort=[SortKey(field="gap", dir=direction)],
+            limit=half,
+        ))
+        if resp["meta"].get("error"):
+            _STATS["errors"] += 1
+            return {"error": resp["meta"]["error"]}
+        universe = resp["count"]
+        for row in resp["rows"]:
+            key = row.get("ticker") or row.get("name")
+            if key in seen:
+                # A market with fewer gaps than the limit returns overlapping
+                # windows. Counting a row twice would inflate both sides.
+                continue
+            seen.add(key)
+            rows.append(row)
+
+    result = _compute_gap_scanner(rows, min_gap_pct=min_gap_pct)
     result["gap_up"] = result["gap_up"][:max(1, top)]
     result["gap_down"] = result["gap_down"][:max(1, top)]
-    result["universe"] = resp["count"]
+    result["universe"] = universe
     result["market"] = market
-    result["sample"] = len(resp["rows"])
+    result["sample"] = len(rows)
     result["min_gap_pct"] = min_gap_pct
     return result
 

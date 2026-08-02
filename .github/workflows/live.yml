@@ -1,0 +1,42 @@
+name: Live data
+
+# The offline suite cannot see a dead field. validate_field is global, so a
+# field passes validation and can still be null for every row in a given
+# market, which is how four preset scans and the Growth factor model ended up
+# returning nothing (or ranking on nothing) while reporting success.
+#
+# Only a real call tells you. These are the tests marked `live`, kept out of
+# the PR build so a TradingView outage never reds someone's pull request, and
+# run here on a schedule instead. A failure here usually means the data source
+# stopped carrying a field, not that someone broke the code.
+
+on:
+  schedule:
+    # 12:00 UTC daily, which is before the US open year round.
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Full suite (offline plus live)
+        # One retry, so a single upstream blip does not read as a dead field.
+        run: |
+          python -m pytest tests/ -q || {
+            echo "First attempt failed, retrying once in 60s."
+            sleep 60
+            python -m pytest tests/ -q
+          }

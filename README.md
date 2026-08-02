@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mphinance/scanline/actions/workflows/ci.yml/badge.svg)](https://github.com/mphinance/scanline/actions/workflows/ci.yml)
 [![Live demo](https://img.shields.io/badge/demo-github_pages-00f0ff)](https://mphinance.github.io/scanline/)
-[![MCP](https://img.shields.io/badge/MCP-16_tools-b026ff)](AGENTS.md)
+[![MCP](https://img.shields.io/badge/MCP-27_tools-b026ff)](AGENTS.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-00ff88)](LICENSE)
 
 The most complete market screener of all time. A **quant analytics layer** on top of

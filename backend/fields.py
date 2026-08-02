@@ -344,7 +344,10 @@ DEFAULT_COLUMNS: dict[str, list[str]] = {
         "name", "description", "close", "change", "volume",
         "market_cap_basic", "price_earnings_ttm", "sector",
     ],
-    "crypto": ["name", "close", "change", "volume", "market_cap_calc", "Value.Traded"],
+    # Value.Traded is a real catalog field but is null for every crypto row, so
+    # it was a permanently blank column on the default crypto view. Same reason
+    # it came out of the crypto_movers preset.
+    "crypto": ["name", "close", "change", "volume", "market_cap_calc"],
     "forex": ["name", "close", "change", "high", "low"],
     "futures": ["name", "close", "change", "volume", "high", "low"],
     "bond": ["name", "close", "change", "high", "low"],
@@ -356,7 +359,7 @@ DEFAULT_COLUMNS: dict[str, list[str]] = {
 MARKET_FIELDS: dict[str, list[str]] = {
     "crypto": [
         "name", "close", "open", "high", "low", "change", "change_abs",
-        "volume", "market_cap_calc", "Value.Traded", "Perf.W", "Perf.1M",
+        "volume", "market_cap_calc", "Perf.W", "Perf.1M",
         "Perf.YTD", "RSI", "SMA50", "SMA200", "Volatility.D",
     ],
     "forex": [

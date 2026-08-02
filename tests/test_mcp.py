@@ -9,6 +9,7 @@ in-memory Client, exactly as a real MCP client would.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 
 import pytest
 from fastmcp import Client
@@ -16,6 +17,7 @@ from fastmcp import Client
 from backend.mcp_server import (
     _compute_breadth,
     _compute_dividend_quality,
+    _days_to_earnings,
     _compute_earnings_radar,
     _compute_ema_stack,
     _compute_gap_scanner,
@@ -170,6 +172,44 @@ def test_run_preset_unknown_id():
 def test_run_factor_preset_unknown_id():
     out = _call("run_factor_preset", {"factor_preset_id": "does_not_exist"})
     assert "error" in out
+
+
+def test_unavailable_presets_are_refused_with_a_reason():
+    """An unavailable preset must never reach the screen path.
+
+    Running it can only return zero rows, and zero rows reads as "no matches
+    today" rather than "this data does not exist". The refusal has to carry the
+    reason, since that is the only thing distinguishing the two.
+    """
+    from backend.presets import PRESETS
+
+    unavailable = [p for p in PRESETS if p.get("unavailable")]
+    assert unavailable, "expected at least one preset marked unavailable"
+    for p in unavailable:
+        out = _call("run_preset", {"preset_id": p["id"]})
+        assert "error" in out, f"{p['id']} ran instead of being refused"
+        assert out.get("reason"), f"{p['id']} was refused without a reason"
+        assert out.get("count") == 0
+        assert out.get("rows") == []
+
+
+def test_unavailable_reason_is_exposed_to_the_web_client():
+    """list_presets and /api/presets must both carry the flag.
+
+    The MCP path refuses these up front, but the web UI builds its own request
+    from the preset body, so it can only refuse what the payload tells it about.
+    Without this the browser silently runs the scan the MCP server declines.
+    """
+    from backend.app import presets as presets_endpoint
+    from backend.presets import PRESETS
+
+    expected = {p["id"] for p in PRESETS if p.get("unavailable")}
+
+    listed = {p["id"] for p in _call("list_presets") if p.get("unavailable")}
+    assert listed == expected
+
+    served = {p["id"] for p in presets_endpoint()["presets"] if p.get("unavailable")}
+    assert served == expected
 
 
 # --- live screen path ----------------------------------------------------
@@ -1428,6 +1468,46 @@ def test_compute_earnings_radar_bucket_classification():
     assert result["by_bucket"]["later"] == 2
 
 
+def test_days_to_earnings_does_not_depend_on_the_host_timezone():
+    """The day count must come from the market's clock, not the server's.
+
+    earnings_release_next_date is a real UTC instant (the 1787774400 below is
+    NVDA's, 20:00 UTC, the 4pm ET after-close slot). Converting it with the
+    host's local timezone made the answer depend on where the process ran: the
+    same row read 24 days out from New York and 25 from Tokyo, so "reports
+    today" silently became "reports tomorrow" past a certain longitude.
+    """
+    import os
+    import time as _time
+
+    ts = 1787774400  # 2026-08-26 20:00 UTC
+    today = dt.date(2026, 8, 2)
+    seen = set()
+    original = os.environ.get("TZ")
+    try:
+        for tz in ("UTC", "America/New_York", "Asia/Tokyo", "Australia/Sydney"):
+            os.environ["TZ"] = tz
+            if hasattr(_time, "tzset"):
+                _time.tzset()
+            seen.add(_days_to_earnings(ts, today))
+    finally:
+        if original is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = original
+        if hasattr(_time, "tzset"):
+            _time.tzset()
+
+    assert len(seen) == 1, f"day count varies with the host timezone: {seen}"
+    assert seen == {24}
+
+
+def test_days_to_earnings_rejects_non_numeric():
+    assert _days_to_earnings(None) is None
+    assert _days_to_earnings("2026-08-26") is None
+    assert _days_to_earnings(True) is None  # bool is an int subclass
+
+
 def test_compute_earnings_radar_sector_breakdown():
     rows = [
         {"name": "T1", "days_to_earnings": 0, "sector": "Tech"},
@@ -1627,6 +1707,34 @@ def test_compute_gap_scanner_missing_gap_field():
     result = _compute_gap_scanner(rows, min_gap_pct=1.0)
     assert result["count"] == 1
     assert result["gap_up"][0]["name"] == "HasGap"
+
+
+@pytest.mark.live
+def test_gap_scanner_samples_both_tails():
+    """gap_scanner must sample both ends of the gap distribution.
+
+    It used to run one query sorted by gap descending and keep the top `limit`
+    rows, which is the largest POSITIVE gaps and nothing else. On america that
+    window ran from +334900% down to +5.9% with no negative in it, so gap_down
+    came back empty and gap_down_count was 0 on a session where 210 of 1000
+    sampled rows had gapped down 1% or more. The tool reported success, and
+    "nothing gapped down today" was a confident false statement.
+
+    The US market always has gaps on both sides once the session has data, so
+    an empty side here means the sampling is one-eyed again.
+    """
+    out = _call("gap_scanner", {"market": "america", "limit": 400})
+    assert "error" not in out, out
+    assert out["gap_up_count"] > 0, "no gap ups sampled at all"
+    assert out["gap_down_count"] > 0, (
+        "gap_down is empty: the sample is one-sided again, so the tool is "
+        "reporting that nothing gapped down"
+    )
+    assert all(r["gap"] > 0 for r in out["gap_up"])
+    assert all(r["gap"] < 0 for r in out["gap_down"])
+
+    names = [r["name"] for r in out["gap_up"]] + [r["name"] for r in out["gap_down"]]
+    assert len(names) == len(set(names)), "a row was counted on both sides"
 
 
 def test_compute_gap_scanner_missing_open_or_close():

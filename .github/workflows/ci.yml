@@ -26,12 +26,44 @@ jobs:
           node-version: "20"
 
       - name: Install Python deps
+        # pytest is declared in requirements.txt, so a bare install is enough.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest
+          pip install -r requirements.txt
 
       - name: Python tests (offline)
         run: python -m pytest tests/ -q -m "not live"
 
       - name: Frontend logic tests
-        run: node --test frontend/js/store.test.mjs frontend/js/openin.test.mjs
+        # Glob, not a hand-listed pair. Naming the files meant a newly added
+        # *.test.mjs was never run and CI stayed green without it.
+        run: node --test frontend/js/*.test.mjs
+
+  house-rules:
+    # CLAUDE.md's rules that a reviewer should never have to check by eye.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No em dashes
+        run: |
+          # Built with printf rather than written literally, so this check does
+          # not trip over its own source.
+          dash=$(printf '\xe2\x80\x94')
+          hits=$(git ls-files -z | xargs -0 grep -IlF -e "$dash" || true)
+          if [ -n "$hits" ]; then
+            echo "Em dashes are not allowed. Use periods and commas. Found in:"
+            echo "$hits"
+            exit 1
+          fi
+
+      - name: No byte order marks
+        run: |
+          fail=0
+          while IFS= read -r -d '' f; do
+            if [ "$(head -c 3 "$f" | od -An -tx1 | tr -d ' \n')" = "efbbbf" ]; then
+              echo "BOM at the start of $f"
+              fail=1
+            fi
+          done < <(git ls-files -z)
+          exit $fail
