@@ -5,13 +5,12 @@
 [![MCP](https://img.shields.io/badge/MCP-27_tools-b026ff)](AGENTS.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-00ff88)](LICENSE)
 
-The most complete market screener of all time. A **quant analytics layer** on top of
-TradingView's data, not a TradingView clone. Built in the synthwave / TraderDaddy /
+A **quant analytics layer** on top of TradingView's data, in the synthwave / TraderDaddy /
 Bloomberg-terminal aesthetic.
 
 Powered by [`tradingview-screener`](https://github.com/shner-elmo/TradingView-Screener) for live,
-no-auth delayed data across stocks, crypto, forex, futures, bonds, and CFDs. Filtering is table
-stakes. The point of this build is everything you do to the data *after* it lands: computed
+no-auth delayed data across stocks, crypto, forex, futures, bonds, and CFDs. Filtering is where it
+starts. The point of this build is everything you do to the data *after* it lands: computed
 columns, factor scoring, in-result statistics, multi-key sort, client-side analytics.
 
 Drive it from the browser, from the HTTP API, or from an AI agent: the same engine is exposed
@@ -33,7 +32,7 @@ Hit `\` for full-table mode: the rail folds away and the factor-ranked table tak
 
 ![Full-table mode](docs/fulltable.png)
 
-## What makes it more than a clone
+## The analytics layer
 
 - **Computed columns.** Define your own derived fields with a safe expression engine, e.g.
   `(high-low)/close*100`, `close/sma50`, `volume*close`. Evaluated server-side with a sandboxed
@@ -89,27 +88,26 @@ Hit `\` for full-table mode: the rail folds away and the factor-ranked table tak
 - Row detail drawer with a performance sparkline. Saved screens and a watchlist (localStorage).
   CSV export. Auto-refresh. Command palette (Ctrl-K) and full keyboard navigation.
 
-## Versus the TradingView web screener
+## What this adds on top
 
-Their web screener filters a single market into a flat table. This does that, then keeps going
-with things their screener simply does not offer:
+TradingView already does the hard part: the data, the field universe, the charts. This is a
+personal analytics workbench built on that foundation, for the kind of work you would otherwise
+do by exporting to a spreadsheet. Every row here is a doorway back to the chart.
 
 - **Math on the result, not just filters.** Define computed columns with a real expression engine
-  (`(high-low)/close*100`, `close/sma50`, `volume*close`) and rank by them. The web screener has
-  no formula columns.
+  (`(high-low)/close*100`, `close/sma50`, `volume*close`) and rank by them.
 - **Composite factor scoring.** Blend any set of fields into one direction-aware weighted z-score
-  and sort the market by it. There is no factor model in the web tool.
+  and sort the market by it. Ships with Momentum, Value, Quality, Growth, and Low-Vol.
 - **In-result statistics.** `zscore`, `pctrank`, `rank`, and `norm` computed across the returned
   set, so you see where each row sits inside *your* screen, not the whole universe.
-- **True multi-key sort.** Primary, secondary, and tertiary keys with priority badges, not one
-  sort column.
-- **One field universe, six markets, one switch.** Stocks, crypto, forex, futures, bonds, and CFDs
-  from the same surface. The web screener makes you pick a context up front.
+- **Multi-key sort.** Primary, secondary, and tertiary keys with priority badges.
+- **Six markets, one switch.** Stocks, crypto, forex, futures, bonds, and CFDs from one surface.
 - **The full field catalog, searchable.** ~190 curated friendly-labelled fields lead and every
   other queryable field (1000+) is reachable, probed live so none of them error.
-- **Yours to script.** An open HTTP API and an MCP server. You can wire it into an agent, a
-  notebook, or a cron. Their screener is a closed web page.
-- **No account, no login, no upsell.** Live delayed data with nothing to sign up for.
+- **Yours to script.** An open HTTP API and an MCP server, so you can wire a screen into an
+  agent, a notebook, or a cron.
+- **Straight back to the chart.** Every symbol deep-links into TradingView, which is where the
+  actual analysis happens. This is a front end for their data, not a replacement for it.
 
 ## MCP server (screen from an agent)
 
@@ -138,14 +136,33 @@ python run_mcp.py              # stdio, for Claude Desktop / Claude Code
 python run_mcp.py --http 8765  # streamable-http for remote / multi-client
 ```
 
-Register it with Claude Desktop (`claude_desktop_config.json`), using absolute paths:
+### Add it to your client
+
+Once `pip install .` has put `scanline-mcp` on your PATH, the config is two lines. Claude Desktop
+(`claude_desktop_config.json`) or a project `.mcp.json` for Claude Code:
+
+```json
+{
+  "mcpServers": {
+    "scanline": { "command": "scanline-mcp" }
+  }
+}
+```
+
+Claude Code can do it for you instead:
+
+```bash
+claude mcp add scanline -- scanline-mcp
+```
+
+If you would rather not install anything, point at the checkout with absolute paths:
 
 ```json
 {
   "mcpServers": {
     "scanline": {
-      "command": "/abs/path/screener/.venv/bin/python",
-      "args": ["/abs/path/screener/run_mcp.py"]
+      "command": "/abs/path/scanline/.venv/bin/python",
+      "args": ["/abs/path/scanline/run_mcp.py"]
     }
   }
 }
@@ -165,30 +182,67 @@ by my Value factor."* No TradingView account needed; data is live and delayed.
 
 ## Run it
 
+Scanline runs on your own machine. There is no hosted version and there is not going to be one:
+requests should come from the person looking at the screen, at human scale, the same way your
+browser talks to TradingView when you visit the site. Pick whichever of these you like.
+
+**Docker, nothing else installed:**
+
+```bash
+docker compose up
+```
+
+**From a checkout:**
+
 ```bash
 pip install -r requirements.txt
 python run.py
 ```
 
-Then open http://127.0.0.1:8000/. Data is live and delayed, no account needed. For real-time data
-pass TradingView cookies through to `get_scanner_data`.
+**As a command, from anywhere:**
+
+```bash
+pip install git+https://github.com/mphinance/scanline    # or `pip install .` in a checkout
+scanline               # the web app
+scanline-mcp           # the MCP server (stdio)
+```
+
+Then open http://127.0.0.1:8000/. Data is live and delayed, no account and no API key needed. For
+real-time data pass TradingView cookies through to `get_scanner_data`.
+
+The web app takes `--host` and `--port` and reads `SCANLINE_HOST` / `SCANLINE_PORT`; the MCP
+server takes `--http PORT` to switch off stdio. The default binds loopback only. Exposing it on a
+network is a deliberate step, not the default.
+
+```bash
+scanline --port 9000
+docker compose --profile mcp up          # adds the MCP server over HTTP on 8765
+docker run --rm scanline python -m pytest tests/ -q -m "not live" -p no:cacheprovider
+```
 
 ## Layout
 
 ```
 backend/      FastAPI app, screen pipeline, screener service, analytics, field catalog, presets, cache
-              + mcp_server.py (the same engine over MCP)
+              + mcp_server.py (the same engine over MCP), cli.py (the `scanline` command)
 frontend/     index.html, css/, js/ feature modules (filters, columns, presets, factor, table, ...)
+showcase/     the static TradingView widget gallery deployed to GitHub Pages
+pine/         Pine Script written for an AI to read (scanline_ai_read.pine)
 docs/         screenshots + capture.py (headless Playwright screenshotter)
-run.py        launches uvicorn on 127.0.0.1:8000
+run.py        launches the web app on 127.0.0.1:8000
 run_mcp.py    launches the MCP server (stdio, or --http PORT)
+pyproject.toml   packaging + the `scanline` and `scanline-mcp` entry points
+Dockerfile    slim image, non-root, healthchecked
+docker-compose.yml   `docker compose up` for the web app, `--profile mcp` adds the MCP server
 tests/        pytest: analytics math, MCP wiring, + live API smoke
 ```
 
 ## Tests
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q -m "not live"   # offline: analytics + MCP wiring, no network
+python -m pytest tests/ -q                  # adds the live tests (hits TradingView)
+node --test frontend/js/*.test.mjs          # frontend logic
 ```
 
 ## Docs
@@ -202,7 +256,7 @@ python -m pytest tests/ -q
 ## Notes
 
 - Read-only by design. No order execution, no money movement.
-- `tradingview-screener` exposes 3000+ fields. The catalog curates 172 of the most useful ones,
+- `tradingview-screener` exposes 3000+ fields. The catalog curates 190 of the most useful ones,
   grouped and typed; computed columns reach anything you can express from them.
 
 ## Credits

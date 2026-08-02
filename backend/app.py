@@ -93,10 +93,28 @@ def screen(req: ScreenRequest) -> JSONResponse:
     return JSONResponse(response)
 
 
-# Mount the static frontend at root if it exists. The frontend is built in a
-# later wave, so tolerate a missing or empty folder.
-_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-if os.path.isdir(_FRONTEND_DIR) and os.path.exists(
-    os.path.join(_FRONTEND_DIR, "index.html")
-):
+def _find_frontend() -> str | None:
+    """Locate the static frontend, or None if this is an API-only install.
+
+    Three shapes have to work: an explicit override, a git checkout where
+    frontend/ sits beside backend/, and an installed wheel where the same files
+    land next to the package as scanline_frontend (see pyproject.toml's
+    force-include). Both of the latter share a parent, so they are one lookup.
+    """
+    parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = [
+        os.environ.get("SCANLINE_FRONTEND_DIR", "").strip(),
+        os.path.join(parent, "frontend"),
+        os.path.join(parent, "scanline_frontend"),
+    ]
+    for path in candidates:
+        if path and os.path.exists(os.path.join(path, "index.html")):
+            return path
+    return None
+
+
+# Mount the static frontend at root if we found it. An API-only deployment (or
+# a partial checkout) is tolerated: the /api routes above still serve.
+_FRONTEND_DIR = _find_frontend()
+if _FRONTEND_DIR:
     app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")

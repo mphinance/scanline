@@ -14,6 +14,8 @@ showcase for GitHub Pages. "TradingView, AI'ed."
 ```bash
 python run.py                               # web app at http://127.0.0.1:8000/
 python run_mcp.py                           # MCP server (stdio; --http 8765 for http)
+docker compose up                           # same web app, containerized
+pip install .                               # installs `scanline` and `scanline-mcp`
 python -m pytest tests/ -q -m "not live"    # offline test suite (fast, no network)
 python -m pytest tests/ -q                  # include live tests (hits TradingView)
 node --test frontend/js/*.test.mjs          # frontend logic tests
@@ -36,6 +38,8 @@ node --test frontend/js/*.test.mjs          # frontend logic tests
 - MCP server (27 tools, 4 prompts, 3 resources): `backend/mcp_server.py`. Reference: `docs/MCP.md`.
 - Frontend feature modules: `frontend/js/` (register via `window.Screener.registerModule`).
 - Static showcase (Pages): `showcase/`.
+- Packaging: `pyproject.toml` (entry points), `Dockerfile`, `docker-compose.yml`.
+  Dependencies live in both `requirements.txt` and `pyproject.toml`; change both.
 - Deeper docs: `docs/ARCHITECTURE.md`, `docs/MCP.md`, `CONTRIBUTING.md`.
 
 ## Workflow

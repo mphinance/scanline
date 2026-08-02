@@ -12,17 +12,17 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
 ### Backend (FastAPI)
 - Service wrapper over `tradingview-screener` using the per-market helper functions so stocks,
   crypto, forex, futures, bonds, and CFDs all return live rows.
-- 172-field curated catalog, grouped and typed. 22 preset scans + 5 factor presets.
+- 190-field curated catalog, grouped and typed. 47 preset scans + 5 factor presets.
 - Sandboxed AST expression engine for computed columns (no `eval`, rejects `__`, attribute access,
   subscripts, and anything off the whitelist).
 - In-result stats (zscore, pctrank, rank, norm) and a direction-aware weighted z-score factor model.
 - In-memory TTL cache. Structured JSON errors, never a 500 stacktrace.
-- 23 pytest tests passing (analytics math offline + a live API smoke).
+- 157 offline pytest tests passing (analytics math + MCP wiring), 194 including the live ones.
 
 ### Frontend (vanilla JS, no build)
 - Synthwave terminal shell: dark `#0a0a0c`, neon cyan/pink/green/purple, glassmorphism, JetBrains
   Mono for data, Inter for UI, glow on interactives.
-- Visual filter builder (full operator set, AND/OR), market switcher, 172-field column picker,
+- Visual filter builder (full operator set, AND/OR), market switcher, 190-field column picker,
   computed + stat column builders, interactive factor weight builder.
 - Data table with multi-key sort, per-column client filters, summary-stat footer, heatmap and
   sign conditional formatting.
@@ -30,6 +30,66 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
   with performance sparkline, auto-refresh, command palette (Ctrl-K), keyboard navigation.
 
 ## Wave log
+
+- **2026-08-02** Packaging, so people can actually run this. Three install paths
+  now: `docker compose up`, the existing `pip install -r requirements.txt` plus
+  `python run.py` from a checkout, and `pip install .` which puts `scanline` and
+  `scanline-mcp` on PATH. New `pyproject.toml` (hatchling) declares both console
+  scripts and force-includes `frontend/` into the wheel as `scanline_frontend`,
+  since the static assets live outside the Python package and an installed wheel
+  has to carry them somewhere importable. `backend/app.py` grew `_find_frontend()`
+  to match: it checks `SCANLINE_FRONTEND_DIR`, then the sibling `frontend/` of a
+  checkout, then the packaged `scanline_frontend/`, and tolerates finding none
+  (an API-only install still serves `/api`). Host and port moved out of `run.py`
+  into `backend/cli.py`, resolved from flags, then `SCANLINE_HOST` /
+  `SCANLINE_PORT`, then the loopback default; `run.py` is now a four-line
+  delegate so the documented command keeps working and gained flags for free.
+  The default stays 127.0.0.1 on purpose: this app proxies an upstream source,
+  so binding every interface should be a deliberate act. The Dockerfile sets
+  `SCANLINE_HOST=0.0.0.0` because publishing a container port already is one.
+  Image is python:3.12-slim, deps in their own cached layer, runs as uid 10001,
+  and healthchecks with the stdlib since slim has no curl. Verified end to end:
+  the wheel installs clean into an empty venv and serves the frontend from
+  site-packages, and the built image runs non-root, answers `/api/health`, serves
+  the index, reports `healthy`, and passes all 157 offline tests inside the
+  container. Docs reframed away from positioning against TradingView and toward
+  what this adds on top of them, since the project is a showcase of their
+  platform, not a competitor to it: the README's "Versus the TradingView web
+  screener" section is now "What this adds on top" and ends on the point that
+  every row deep-links back into TradingView. The showcase gained a "Run it
+  yourself" section with the three install paths and a nav link, and its MCP
+  config snippet (and the README's, and `docs/MCP.md`'s) collapsed from absolute
+  interpreter paths to `{"command": "scanline-mcp"}`, plus `claude mcp add`.
+  Fixed a stale "16 MCP tools" claim on the showcase; it is 27.
+
+  Review pass on the above caught two real bugs. `scanline-mcp --http` called
+  `mcp.run()` without a host, and fastmcp binds 127.0.0.1 by default, so inside
+  a container it was invisible from outside no matter which port you published;
+  the `mcp` compose profile could never have worked. `main()` now resolves a
+  host the same way the web app does (flag, then `SCANLINE_HOST`, then
+  loopback), which the image's existing `SCANLINE_HOST=0.0.0.0` then picks up.
+  Verified by completing a real MCP `initialize` handshake from the host against
+  a containerized `--http` server. Second bug: the compose MCP service inherited
+  the image healthcheck, which probes the web app's `/api/health` and so left
+  that service permanently `unhealthy` while working fine; it is disabled there
+  now. `scanline-mcp --help` also used to silently start the stdio server, so it
+  prints usage instead. Same pass found stale counts, now corrected: the curated
+  catalog is 190 fields (not 172), there are 47 presets (not 22), and the suite
+  is 157 offline / 194 total (not 23).
+
+  Tone pass to finish the reframe. The README lost the "most complete market
+  screener of all time" superlative and the "not a TradingView clone"
+  definition-by-negation, "filtering is table stakes" became "filtering is where
+  it starts" (the TradingView screener does that job well, no reason to be rude
+  about it), and the "What makes it more than a clone" heading is now "The
+  analytics layer", which is what the section actually describes. The showcase
+  h1 went from "Build your own TradingView at home" to "Build your own terminal
+  on TradingView", with the og and twitter descriptions following it, since
+  substitution framing was the one thing on that page fighting its own footer.
+  The Lightweight Charts card calls itself "the real self-host path" rather than
+  "the real DIY TradingView". The app's own meta description dropped its
+  superlative too. SPEC.md keeps the original wording on purpose: it is the
+  historical brief, not current copy.
 
 - **Nightly 2026-07-02** Added `dividend_screen` MCP tool. Finds high-quality
   dividend-paying stocks ranked by a composite Dividend Quality Score (`dq_score`,

@@ -9,14 +9,14 @@
 <!-- Social preview -->
 <meta property="og:type" content="website" />
 <meta property="og:title" content="SCANLINE - TradingView, AI'ed" />
-<meta property="og:description" content="Build your own TradingView at home: free widgets, the open-source Lightweight Charts core, and an MCP server so your AI can screen and read charts. Pure TradingView." />
+<meta property="og:description" content="Build your own terminal on TradingView: free widgets, the open-source Lightweight Charts core, and an MCP server so your AI can screen and read charts. Pure TradingView." />
 <meta property="og:url" content="https://mphinance.github.io/scanline/" />
 <meta property="og:image" content="https://mphinance.github.io/scanline/og.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="SCANLINE - TradingView, AI'ed" />
-<meta name="twitter:description" content="Build your own TradingView at home, AI'ed. Pure TradingView, no outside data." />
+<meta name="twitter:description" content="Build your own terminal on TradingView, AI'ed. Pure TradingView, no outside data." />
 <meta name="twitter:image" content="https://mphinance.github.io/scanline/og.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -44,6 +44,7 @@
       <a href="#widgets">Widgets</a>
       <a href="#build">Build your own</a>
       <a href="#mcp">AI / MCP</a>
+      <a href="#install">Run it</a>
       <a href="https://github.com/mphinance/scanline">GitHub</a>
     </div>
   </div>
@@ -53,7 +54,7 @@
 <header class="hero">
   <div class="wrap">
     <div class="kicker">TradingView, AI'ed</div>
-    <h1>Build your own<br />TradingView at home</h1>
+    <h1>Build your own terminal<br />on TradingView</h1>
     <p class="lede">Everything here runs on TradingView's own libraries: the free embeddable widgets, the open-source Lightweight Charts core, and a screener with an MCP server so your AI can screen, read charts, and rank markets for you. No outside data, anywhere.</p>
     <div class="cta">
       <a class="btn" href="#widgets">See the widgets</a>
@@ -79,7 +80,7 @@
       <div class="tier">
         <span class="tag">APACHE 2.0 // SELF-HOST</span>
         <h3>Lightweight Charts</h3>
-        <p>The open-source charting core on npm. Fully redistributable, you bring your own data. This is the real DIY TradingView. There is a live one below.</p>
+        <p>The open-source charting core on npm. Fully redistributable, you bring your own data. This is the real self-host path. There is a live one below.</p>
       </div>
       <div class="tier">
         <span class="tag">FREE // ACCESS-GATED</span>
@@ -258,10 +259,7 @@
 <pre><span class="c-com"># claude_desktop_config.json</span>
 {
   <span class="c-key">"mcpServers"</span>: {
-    <span class="c-key">"scanline"</span>: {
-      <span class="c-key">"command"</span>: <span class="c-str">"/abs/path/.venv/bin/python"</span>,
-      <span class="c-key">"args"</span>: [<span class="c-str">"/abs/path/run_mcp.py"</span>]
-    }
+    <span class="c-key">"scanline"</span>: { <span class="c-key">"command"</span>: <span class="c-str">"scanline-mcp"</span> }
   }
 }
 
@@ -276,7 +274,7 @@ timeframes mixed (1w/1m bull, 1h/4h/1d bear).
 </pre>
       </div>
       <div>
-        <p style="color:var(--muted);margin-top:0">16 MCP tools and 4 canned prompts. The screening engine, plus symbol intelligence:</p>
+        <p style="color:var(--muted);margin-top:0">27 MCP tools and 4 canned prompts. The screening engine, plus symbol intelligence:</p>
         <div class="toollist">
           <span class="pill"><b>analyze</b> chart read, all timeframes</span>
           <span class="pill"><b>screen</b> filters + factors + stats</span>
@@ -287,7 +285,49 @@ timeframes mixed (1w/1m bull, 1h/4h/1d bear).
           <span class="pill"><b>search_symbols</b></span>
           <span class="pill"><b>run_factor_preset</b></span>
         </div>
-        <p style="margin-top:18px"><a class="btn" href="https://github.com/mphinance/scanline">Get the screener</a></p>
+        <p style="margin-top:18px"><a class="btn" href="#install">Get the screener</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Install -->
+<section id="install">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Run it yourself</div>
+      <h2>Three ways in</h2>
+      <p>The screener runs on your own machine. There is no hosted version and there is not going to be one: a screen should come from the person reading it, at human scale, the same way your browser talks to TradingView when you open the site. No account, no API key, nothing to sign up for.</p>
+    </div>
+    <div class="mcp">
+      <div class="codeblock">
+<pre><span class="c-com"># 1. Docker, nothing else installed</span>
+git clone https://github.com/mphinance/scanline
+cd scanline
+docker compose up
+
+<span class="c-com"># 2. From a checkout</span>
+pip install -r requirements.txt
+python run.py
+
+<span class="c-com"># 3. As a command, from anywhere</span>
+pip install git+https://github.com/mphinance/scanline
+scanline           <span class="c-com"># the web app</span>
+scanline-mcp       <span class="c-com"># the MCP server</span>
+</pre>
+      </div>
+      <div>
+        <p style="color:var(--muted);margin-top:0">All three serve the same thing at <span class="mono">127.0.0.1:8000</span>: the full screener, the analytics layer, and the HTTP API. Loopback only unless you say otherwise.</p>
+        <div class="toollist">
+          <span class="pill"><b>MIT</b> licensed</span>
+          <span class="pill"><b>no build step</b> on the frontend</span>
+          <span class="pill"><b>no account</b> needed</span>
+          <span class="pill"><b>read-only</b>, no order execution</span>
+        </div>
+        <p style="margin-top:18px">
+          <a class="btn" href="https://github.com/mphinance/scanline">Source on GitHub</a>
+          <a class="btn alt" href="https://github.com/mphinance/scanline/blob/master/docs/MCP.md" style="margin-left:8px">MCP reference</a>
+        </p>
       </div>
     </div>
   </div>

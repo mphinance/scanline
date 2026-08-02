@@ -25,6 +25,7 @@ Design notes, informed by the existing TradingView MCP servers:
 from __future__ import annotations
 
 import datetime as dt
+import os
 import sys
 import time
 from typing import Any
@@ -2773,15 +2774,45 @@ def operators_resource() -> list[dict]:
     return OPERATORS
 
 
+DEFAULT_MCP_HOST = "127.0.0.1"
+
+_USAGE = """usage: scanline-mcp [--http PORT] [--host HOST]
+
+Serve the Scanline MCP server. Default transport is stdio, which is what
+Claude Desktop and Claude Code expect.
+
+  --http PORT   serve streamable-http on PORT instead of stdio (default 8765)
+  --host HOST   interface to bind for --http (default 127.0.0.1,
+                env SCANLINE_HOST)
+"""
+
+
 def main() -> None:
     """Entry point. Default stdio; `--http PORT` for streamable-http."""
     args = sys.argv[1:]
-    if "--http" in args:
-        i = args.index("--http")
-        port = int(args[i + 1]) if i + 1 < len(args) else 8765
-        mcp.run(transport="http", port=port)
-    else:
+
+    if "-h" in args or "--help" in args:
+        print(_USAGE)
+        return
+
+    if "--http" not in args:
         mcp.run()
+        return
+
+    i = args.index("--http")
+    port = int(args[i + 1]) if i + 1 < len(args) else 8765
+
+    # Same precedence the web app uses (see backend/cli.py): flag, then
+    # environment, then loopback. Without an explicit host fastmcp binds
+    # 127.0.0.1, which is invisible from outside a container no matter what
+    # port you publish, so the Docker image's SCANLINE_HOST has to reach here.
+    if "--host" in args:
+        j = args.index("--host")
+        host = args[j + 1] if j + 1 < len(args) else DEFAULT_MCP_HOST
+    else:
+        host = os.environ.get("SCANLINE_HOST", "").strip() or DEFAULT_MCP_HOST
+
+    mcp.run(transport="http", host=host, port=port)
 
 
 if __name__ == "__main__":

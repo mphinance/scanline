@@ -5,6 +5,8 @@ venv/
 env/
 *.egg-info/
 .pytest_cache/
+build/
+dist/
 .DS_Store
 Thumbs.db
 node_modules/

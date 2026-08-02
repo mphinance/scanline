@@ -1,0 +1,21 @@
+# Keep the build context small and the image free of things it never runs.
+.git
+.github
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+
+# Static Pages showcase: deployed by GitHub Actions, not served by this image.
+showcase/
+
+# Screenshots and the capture scripts. Several megabytes of PNG and a GIF that
+# the running app never reads.
+docs/*.png
+docs/*.gif
+docs/capture*.py
+
+# Pine scripts are for the TradingView editor, not for the server.
+pine/

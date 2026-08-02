@@ -8,14 +8,37 @@ needed (data is live and delayed).
 ## Run
 
 ```bash
-python run_mcp.py              # stdio (Claude Desktop, Claude Code)
-python run_mcp.py --http 8765  # streamable-http for remote / multi-client
+pip install git+https://github.com/mphinance/scanline   # or `pip install .` in a checkout
+
+scanline-mcp                   # stdio (Claude Desktop, Claude Code)
+scanline-mcp --http 8765       # streamable-http for remote / multi-client
+scanline-mcp --http 8765 --host 0.0.0.0   # reachable from off the machine
 ```
+
+`--host` defaults to `127.0.0.1` and also reads `SCANLINE_HOST`, matching the
+web app. It only applies to `--http`; stdio has no socket. From a checkout
+without installing, `python run_mcp.py` takes the same flags.
 
 ## Register
 
 Claude Desktop (`claude_desktop_config.json`) or a project `.mcp.json` for
-Claude Code, with absolute paths:
+Claude Code. With the package installed there are no paths to get wrong:
+
+```json
+{
+  "mcpServers": {
+    "scanline": { "command": "scanline-mcp" }
+  }
+}
+```
+
+Claude Code can write that for you:
+
+```bash
+claude mcp add scanline -- scanline-mcp
+```
+
+Running from a checkout instead, use absolute paths and the venv interpreter:
 
 ```json
 {
