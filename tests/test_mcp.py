@@ -1709,6 +1709,34 @@ def test_compute_gap_scanner_missing_gap_field():
     assert result["gap_up"][0]["name"] == "HasGap"
 
 
+@pytest.mark.live
+def test_gap_scanner_samples_both_tails():
+    """gap_scanner must sample both ends of the gap distribution.
+
+    It used to run one query sorted by gap descending and keep the top `limit`
+    rows, which is the largest POSITIVE gaps and nothing else. On america that
+    window ran from +334900% down to +5.9% with no negative in it, so gap_down
+    came back empty and gap_down_count was 0 on a session where 210 of 1000
+    sampled rows had gapped down 1% or more. The tool reported success, and
+    "nothing gapped down today" was a confident false statement.
+
+    The US market always has gaps on both sides once the session has data, so
+    an empty side here means the sampling is one-eyed again.
+    """
+    out = _call("gap_scanner", {"market": "america", "limit": 400})
+    assert "error" not in out, out
+    assert out["gap_up_count"] > 0, "no gap ups sampled at all"
+    assert out["gap_down_count"] > 0, (
+        "gap_down is empty: the sample is one-sided again, so the tool is "
+        "reporting that nothing gapped down"
+    )
+    assert all(r["gap"] > 0 for r in out["gap_up"])
+    assert all(r["gap"] < 0 for r in out["gap_down"])
+
+    names = [r["name"] for r in out["gap_up"]] + [r["name"] for r in out["gap_down"]]
+    assert len(names) == len(set(names)), "a row was counted on both sides"
+
+
 def test_compute_gap_scanner_missing_open_or_close():
     # When open or close is missing, gap_fill_pct and flags are None/False.
     rows = [

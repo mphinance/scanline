@@ -2256,27 +2256,50 @@ def gap_scanner(
     is_holding, is_filled, volume, rvol}],
     gap_down:[same shape]}.
     """
-    req = ScreenRequest(
-        market=market,
-        filters=[Filter(**f) for f in (filters or [])],
-        columns=[
-            "name", "close", "open", "change", "sector",
-            "gap", "volume", "relative_volume_10d_calc",
-        ],
-        sort=[SortKey(field="gap", dir="desc")],
-        limit=max(1, min(limit, 2000)),
-    )
-    resp = run_screen(req)
-    if resp["meta"].get("error"):
-        _STATS["errors"] += 1
-        return {"error": resp["meta"]["error"]}
+    # BOTH tails, one query each. A single query sorted by gap descending takes
+    # the largest POSITIVE gaps and nothing else: measured on america, the top
+    # 500 window ran from +334900% down to +5.9% with not one negative in it, so
+    # gap_down was always empty and gap_down_count always 0. That is a confident
+    # "nothing gapped down today" on a session where 210 of 1000 sampled rows had
+    # gapped down 1% or more. The limit is split so the total sampled still
+    # matches what `limit` advertises.
+    base = [Filter(**f) for f in (filters or [])]
+    cols = [
+        "name", "close", "open", "change", "sector",
+        "gap", "volume", "relative_volume_10d_calc",
+    ]
+    half = max(1, min(limit, 2000) // 2)
 
-    result = _compute_gap_scanner(resp["rows"], min_gap_pct=min_gap_pct)
+    rows: list[dict] = []
+    seen: set = set()
+    universe = 0
+    for direction in ("desc", "asc"):
+        resp = run_screen(ScreenRequest(
+            market=market,
+            filters=base,
+            columns=cols,
+            sort=[SortKey(field="gap", dir=direction)],
+            limit=half,
+        ))
+        if resp["meta"].get("error"):
+            _STATS["errors"] += 1
+            return {"error": resp["meta"]["error"]}
+        universe = resp["count"]
+        for row in resp["rows"]:
+            key = row.get("ticker") or row.get("name")
+            if key in seen:
+                # A market with fewer gaps than the limit returns overlapping
+                # windows. Counting a row twice would inflate both sides.
+                continue
+            seen.add(key)
+            rows.append(row)
+
+    result = _compute_gap_scanner(rows, min_gap_pct=min_gap_pct)
     result["gap_up"] = result["gap_up"][:max(1, top)]
     result["gap_down"] = result["gap_down"][:max(1, top)]
-    result["universe"] = resp["count"]
+    result["universe"] = universe
     result["market"] = market
-    result["sample"] = len(resp["rows"])
+    result["sample"] = len(rows)
     result["min_gap_pct"] = min_gap_pct
     return result
 
