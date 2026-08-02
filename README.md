@@ -5,13 +5,12 @@
 [![MCP](https://img.shields.io/badge/MCP-27_tools-b026ff)](AGENTS.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-00ff88)](LICENSE)
 
-The most complete market screener of all time. A **quant analytics layer** on top of
-TradingView's data, not a TradingView clone. Built in the synthwave / TraderDaddy /
+A **quant analytics layer** on top of TradingView's data, in the synthwave / TraderDaddy /
 Bloomberg-terminal aesthetic.
 
 Powered by [`tradingview-screener`](https://github.com/shner-elmo/TradingView-Screener) for live,
-no-auth delayed data across stocks, crypto, forex, futures, bonds, and CFDs. Filtering is table
-stakes. The point of this build is everything you do to the data *after* it lands: computed
+no-auth delayed data across stocks, crypto, forex, futures, bonds, and CFDs. Filtering is where it
+starts. The point of this build is everything you do to the data *after* it lands: computed
 columns, factor scoring, in-result statistics, multi-key sort, client-side analytics.
 
 Drive it from the browser, from the HTTP API, or from an AI agent: the same engine is exposed
@@ -33,7 +32,7 @@ Hit `\` for full-table mode: the rail folds away and the factor-ranked table tak
 
 ![Full-table mode](docs/fulltable.png)
 
-## What makes it more than a clone
+## The analytics layer
 
 - **Computed columns.** Define your own derived fields with a safe expression engine, e.g.
   `(high-low)/close*100`, `close/sma50`, `volume*close`. Evaluated server-side with a sandboxed

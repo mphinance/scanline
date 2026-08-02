@@ -77,6 +77,20 @@ across 6 markets. The differentiator is the analytics layer on top of the raw sc
   catalog is 190 fields (not 172), there are 47 presets (not 22), and the suite
   is 157 offline / 194 total (not 23).
 
+  Tone pass to finish the reframe. The README lost the "most complete market
+  screener of all time" superlative and the "not a TradingView clone"
+  definition-by-negation, "filtering is table stakes" became "filtering is where
+  it starts" (the TradingView screener does that job well, no reason to be rude
+  about it), and the "What makes it more than a clone" heading is now "The
+  analytics layer", which is what the section actually describes. The showcase
+  h1 went from "Build your own TradingView at home" to "Build your own terminal
+  on TradingView", with the og and twitter descriptions following it, since
+  substitution framing was the one thing on that page fighting its own footer.
+  The Lightweight Charts card calls itself "the real self-host path" rather than
+  "the real DIY TradingView". The app's own meta description dropped its
+  superlative too. SPEC.md keeps the original wording on purpose: it is the
+  historical brief, not current copy.
+
 - **Nightly 2026-07-02** Added `dividend_screen` MCP tool. Finds high-quality
   dividend-paying stocks ranked by a composite Dividend Quality Score (`dq_score`,
   0-100 percentile within the sample). Three components feed the score: a yield
