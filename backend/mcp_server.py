@@ -929,6 +929,172 @@ def analyze(ticker: str, market: str = "america") -> dict:
     }
 
 
+# Fields fundamentals() reads. The catalog (backend/fields.py) already carries all of these.
+# analyze() never touched them because it is deliberately technicals-only, so this is
+# composition, not new data.
+#
+# Three catalog fields that validate but are DEAD (null on every US row, per the same
+# discovery already made for the growth factor preset and the dividend_aristocrats preset in
+# presets.py, and re-confirmed here by sampling 300 large-cap rows): `revenue_growth_ttm_yoy` /
+# `revenue_growth_fq_yoy` / `earnings_per_share_diluted_growth_percent_ttm_yoy` (0/300),
+# `dividend_yield_recent` (0/300), `payout_ratio` (0/300), `days_to_earnings` (0/300, per
+# `_days_to_earnings`'s own docstring below). Do not reintroduce them, they validate against
+# `validate_field()` so nothing catches the mistake except sampling real rows.
+_FUNDAMENTALS_COLUMNS = [
+    "name", "description", "sector", "industry", "number_of_employees",
+    "market_cap_basic",
+    "price_earnings_ttm", "price_earnings_growth_ttm", "price_sales_current",
+    "price_book_fq", "price_free_cash_flow_ttm", "enterprise_value_ebitda_ttm",
+    "enterprise_value_to_revenue_ttm",
+    "earnings_per_share_basic_ttm", "earnings_per_share_diluted_ttm",
+    "earnings_per_share_forecast_next_fq",
+    "gross_margin", "operating_margin", "net_margin", "free_cash_flow_margin_ttm",
+    "return_on_equity", "return_on_assets", "return_on_invested_capital",
+    "total_revenue", "net_income",
+    "total_revenue_yoy_growth_ttm", "total_revenue_yoy_growth_fq",
+    "earnings_per_share_diluted_yoy_growth_ttm",
+    "total_debt", "total_equity_fq", "debt_to_equity", "current_ratio", "quick_ratio",
+    "cash_n_short_term_invest_fq", "net_debt",
+    "dividends_yield", "dividend_payout_ratio_ttm", "continuous_dividend_growth",
+    "earnings_release_next_date",
+]
+
+
+@mcp.tool
+def fundamentals(ticker: str, market: str = "america") -> dict:
+    """Read a symbol's fundamentals: valuation, profitability, growth, leverage, dividends.
+
+    The counterpart to `analyze()`, which is deliberately technicals-only. This is the
+    fundamentals half of the same symbol, composed from TradingView's own reported financials
+    (same data `screen`/`compare` can already pull field-by-field, packaged here into a single
+    narratable read plus plain-language flags).
+
+    A missing field (TradingView carries no fundamentals for some ETFs, SPACs, and non-US
+    listings) is left out of its section rather than shown as zero. A `0.0` P/E and a
+    genuinely absent one must never look the same.
+
+    Returns {ticker, sector, industry, valuation, profitability, growth, leverage, dividends,
+    earnings, signals[], summary}.
+    """
+    row, err = _resolve_row(ticker, market, _FUNDAMENTALS_COLUMNS)
+    if err:
+        return _unavailable(ticker, err)
+    if row is None:
+        return {"error": f"No symbol '{ticker.upper()}' in market '{market}'."}
+
+    g = row.get
+    signals: list[str] = []
+
+    def section(*keys: str) -> dict:
+        return {k: g(k) for k in keys if g(k) is not None}
+
+    valuation = section(
+        "market_cap_basic", "price_earnings_ttm", "price_earnings_growth_ttm",
+        "price_sales_current", "price_book_fq", "price_free_cash_flow_ttm",
+        "enterprise_value_ebitda_ttm", "enterprise_value_to_revenue_ttm",
+        "earnings_per_share_basic_ttm", "earnings_per_share_diluted_ttm",
+        "earnings_per_share_forecast_next_fq",
+    )
+    profitability = section(
+        "gross_margin", "operating_margin", "net_margin", "free_cash_flow_margin_ttm",
+        "return_on_equity", "return_on_assets", "return_on_invested_capital",
+    )
+    growth = section(
+        "total_revenue", "net_income", "total_revenue_yoy_growth_ttm",
+        "total_revenue_yoy_growth_fq", "earnings_per_share_diluted_yoy_growth_ttm",
+    )
+    leverage = section(
+        "total_debt", "total_equity_fq", "debt_to_equity", "current_ratio", "quick_ratio",
+        "cash_n_short_term_invest_fq", "net_debt",
+    )
+    dividends = section("dividends_yield", "dividend_payout_ratio_ttm", "continuous_dividend_growth")
+    # days_to_earnings is dead on TradingView's side (see _days_to_earnings's docstring).
+    # Derive it the same way the rest of this module already does, from the populated
+    # earnings_release_next_date timestamp.
+    dte = _days_to_earnings(g("earnings_release_next_date"))
+    earnings = section("earnings_release_next_date")
+    if dte is not None:
+        earnings["days_to_earnings"] = dte
+
+    # ---- Plain-language flags. Each one only fires when every field it needs is present.
+    eps_ttm = g("earnings_per_share_basic_ttm")
+    if eps_ttm is not None and eps_ttm < 0:
+        signals.append("Unprofitable on a TTM EPS basis")
+
+    pe = g("price_earnings_ttm")
+    peg = g("price_earnings_growth_ttm")
+    if pe is not None and pe > 0 and peg is not None:
+        if 0 < peg < 1:
+            signals.append(f"PEG {peg:.2f}: growth looks cheap relative to the P/E")
+        elif peg > 2:
+            signals.append(f"PEG {peg:.2f}: expensive relative to growth")
+
+    de = g("debt_to_equity")
+    if de is not None and de > 2:
+        signals.append(f"Debt/Equity {de:.1f}: highly levered")
+
+    cr = g("current_ratio")
+    if cr is not None and cr < 1:
+        signals.append(f"Current ratio {cr:.2f}: current liabilities exceed current assets")
+
+    roe = g("return_on_equity")
+    if roe is not None and roe < 0:
+        signals.append("Negative ROE")
+
+    rev_ttm_yoy = g("total_revenue_yoy_growth_ttm")
+    rev_fq_yoy = g("total_revenue_yoy_growth_fq")
+    if rev_ttm_yoy is not None and rev_fq_yoy is not None:
+        if rev_fq_yoy < rev_ttm_yoy - 5:
+            signals.append(
+                f"Revenue growth decelerating: {rev_fq_yoy:.1f}% latest quarter vs "
+                f"{rev_ttm_yoy:.1f}% TTM"
+            )
+        elif rev_fq_yoy > rev_ttm_yoy + 5:
+            signals.append(
+                f"Revenue growth accelerating: {rev_fq_yoy:.1f}% latest quarter vs "
+                f"{rev_ttm_yoy:.1f}% TTM"
+            )
+
+    if dte is not None and 0 <= dte <= 7:
+        signals.append(f"Reports earnings in {dte} day{'s' if dte != 1 else ''}")
+
+    div_yield = g("dividends_yield")
+    payout = g("dividend_payout_ratio_ttm")
+    if div_yield is not None and div_yield > 0 and payout is not None and payout > 100:
+        signals.append(f"Payout ratio {payout:.0f}%: dividend exceeds earnings")
+
+    summary_bits = []
+    if pe is not None:
+        summary_bits.append(f"P/E {pe:.1f}")
+    if rev_ttm_yoy is not None:
+        summary_bits.append(f"Rev growth {rev_ttm_yoy:.1f}% YoY")
+    net_margin = g("net_margin")
+    if net_margin is not None:
+        summary_bits.append(f"Net margin {net_margin:.1f}%")
+    if dte is not None:
+        summary_bits.append(f"earnings in {dte}d")
+    summary = (
+        f"{row.get('name', ticker.upper())}: " + (", ".join(summary_bits) if summary_bits else "no fundamentals data reported")
+    )
+
+    return {
+        "ticker": row.get("name", ticker.upper()),
+        "description": row.get("description"),
+        "sector": row.get("sector"),
+        "industry": row.get("industry"),
+        "employees": row.get("number_of_employees"),
+        "market": market,
+        "valuation": valuation,
+        "profitability": profitability,
+        "growth": growth,
+        "leverage": leverage,
+        "dividends": dividends,
+        "earnings": earnings,
+        "signals": signals,
+        "summary": summary,
+    }
+
+
 @mcp.tool
 def chart(ticker: str, market: str = "america", interval: str = "1d", theme: str = "dark") -> dict:
     """Get a live TradingView chart for a symbol: deep link + embeddable widget.

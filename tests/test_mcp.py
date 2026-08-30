@@ -109,6 +109,8 @@ def test_tools_and_resources_registered():
         "gap_scanner",
         # Nightly 2026-07-02: dividend quality screen.
         "dividend_screen",
+        # analyze()'s fundamentals counterpart: valuation/profitability/growth/leverage/dividends.
+        "fundamentals",
     }
     assert expected_tools <= set(tools)
     assert {"screener://fields", "screener://presets", "screener://operators"} <= set(resources)
@@ -358,6 +360,47 @@ def test_analyze_multi_timeframe_live():
     assert {"1d", "1w"} <= set(mtf["by_timeframe"].keys())
     for tf in mtf["by_timeframe"].values():
         assert tf["bias"] in {"bull", "bear", "mixed"}
+
+
+@pytest.mark.live
+def test_fundamentals_live():
+    out = _call("fundamentals", {"ticker": "AAPL"})
+    assert out["summary"]
+    assert out["valuation"]["price_earnings_ttm"] > 0
+    assert out["growth"]["total_revenue_yoy_growth_ttm"] is not None
+    assert out["dividends"]["dividends_yield"] > 0
+    assert out["earnings"]["days_to_earnings"] >= 0
+
+
+@pytest.mark.live
+def test_fundamentals_columns_are_populated_in_their_own_market():
+    """Same dead-field regression check as
+    test_backend.test_displayed_and_scored_fields_are_populated_in_their_own_market, for the
+    columns fundamentals() reads. This is the test that would have caught
+    revenue_growth_ttm_yoy / earnings_per_share_diluted_growth_percent_ttm_yoy /
+    dividend_yield_recent / payout_ratio / days_to_earnings all being null on every US row before
+    the tool shipped, rather than after.
+    """
+    from backend.mcp_server import _FUNDAMENTALS_COLUMNS
+    from backend.models import Filter, ScreenRequest
+    from backend.pipeline import run_screen
+
+    cols = [c for c in _FUNDAMENTALS_COLUMNS if c not in ("name", "description", "sector",
+                                                            "industry", "number_of_employees")]
+    resp = run_screen(ScreenRequest(
+        market="america",
+        filters=[Filter(field="market_cap_basic", op=">", value=1e9)],
+        columns=cols,
+        limit=200,
+    ))
+    assert not resp["meta"].get("error"), resp["meta"].get("error")
+    assert resp["rows"]
+    for field in cols:
+        populated = sum(1 for r in resp["rows"] if r.get(field) is not None)
+        assert populated, (
+            f"fundamentals() column '{field}' is null for all {len(resp['rows'])} sampled "
+            f"large-cap rows, it validates against the catalog but returns nothing live"
+        )
 
 
 @pytest.mark.live
