@@ -2030,19 +2030,19 @@ def test_compute_dividend_quality_basic():
     rows = [
         {
             "name": "A", "close": 100.0, "change": 1.0, "sector": "Consumer",
-            "market_cap_basic": 5e10, "dividend_yield_recent": 4.0,
+            "market_cap_basic": 5e10, "dividends_yield_current": 4.0,
             "continuous_dividend_payout": 30, "continuous_dividend_growth": 28,
             "payout_ratio": 50.0, "return_on_equity": 20.0, "Perf.1M": 3.0,
         },
         {
             "name": "B", "close": 50.0, "change": -0.5, "sector": "Utilities",
-            "market_cap_basic": 2e10, "dividend_yield_recent": 3.0,
+            "market_cap_basic": 2e10, "dividends_yield_current": 3.0,
             "continuous_dividend_payout": 15, "continuous_dividend_growth": 12,
             "payout_ratio": 60.0, "return_on_equity": 12.0, "Perf.1M": 1.0,
         },
         {
             "name": "C", "close": 20.0, "change": -1.0, "sector": "Energy",
-            "market_cap_basic": 5e9, "dividend_yield_recent": 1.5,
+            "market_cap_basic": 5e9, "dividends_yield_current": 1.5,
             "continuous_dividend_payout": 5, "continuous_dividend_growth": 0,
             "payout_ratio": 90.0, "return_on_equity": 5.0, "Perf.1M": -2.0,
         },
@@ -2076,9 +2076,9 @@ def test_compute_dividend_quality_empty():
 def test_compute_dividend_quality_min_yield_filter():
     # Only rows with div_yield >= min_yield qualify.
     rows = [
-        {"name": "Hi", "dividend_yield_recent": 3.0, "continuous_dividend_growth": 5,
+        {"name": "Hi", "dividends_yield_current": 3.0, "continuous_dividend_growth": 5,
          "payout_ratio": 40.0, "sector": "Tech"},
-        {"name": "Lo", "dividend_yield_recent": 0.5, "continuous_dividend_growth": 2,
+        {"name": "Lo", "dividends_yield_current": 0.5, "continuous_dividend_growth": 2,
          "payout_ratio": 30.0, "sector": "Tech"},
     ]
     result = _compute_dividend_quality(rows, min_yield=2.0)
@@ -2088,11 +2088,11 @@ def test_compute_dividend_quality_min_yield_filter():
 
 def test_compute_dividend_quality_categories():
     rows = [
-        {"name": "Arist",  "dividend_yield_recent": 2.0, "continuous_dividend_growth": 25, "sector": "S"},
-        {"name": "Achiev", "dividend_yield_recent": 2.0, "continuous_dividend_growth": 10, "sector": "S"},
-        {"name": "Grower", "dividend_yield_recent": 2.0, "continuous_dividend_growth": 5,  "sector": "S"},
-        {"name": "Payer",  "dividend_yield_recent": 2.0, "continuous_dividend_growth": 0,  "sector": "S"},
-        {"name": "NoDat",  "dividend_yield_recent": 2.0,                                   "sector": "S"},
+        {"name": "Arist",  "dividends_yield_current": 2.0, "continuous_dividend_growth": 25, "sector": "S"},
+        {"name": "Achiev", "dividends_yield_current": 2.0, "continuous_dividend_growth": 10, "sector": "S"},
+        {"name": "Grower", "dividends_yield_current": 2.0, "continuous_dividend_growth": 5,  "sector": "S"},
+        {"name": "Payer",  "dividends_yield_current": 2.0, "continuous_dividend_growth": 0,  "sector": "S"},
+        {"name": "NoDat",  "dividends_yield_current": 2.0,                                   "sector": "S"},
     ]
     result = _compute_dividend_quality(rows, min_yield=1.0)
     by_name = {s["name"]: s for s in result["stocks"]}
@@ -2111,8 +2111,8 @@ def test_compute_dividend_quality_categories():
 def test_compute_dividend_quality_missing_yield_skipped():
     rows = [
         {"name": "NoYield", "sector": "S"},
-        {"name": "NullYield", "dividend_yield_recent": None, "sector": "S"},
-        {"name": "HasYield", "dividend_yield_recent": 2.5, "continuous_dividend_growth": 3,
+        {"name": "NullYield", "dividends_yield_current": None, "sector": "S"},
+        {"name": "HasYield", "dividends_yield_current": 2.5, "continuous_dividend_growth": 3,
          "payout_ratio": 45.0, "sector": "S"},
     ]
     result = _compute_dividend_quality(rows, min_yield=1.0)
@@ -2122,7 +2122,7 @@ def test_compute_dividend_quality_missing_yield_skipped():
 
 def test_compute_dividend_quality_score_bounds():
     rows = [
-        {"name": str(i), "dividend_yield_recent": float(y),
+        {"name": str(i), "dividends_yield_current": float(y),
          "continuous_dividend_growth": i * 5, "payout_ratio": 30.0 + i * 10, "sector": "S"}
         for i, y in enumerate([1.5, 2.5, 4.0, 6.0, 8.0])
     ]
@@ -2134,11 +2134,11 @@ def test_compute_dividend_quality_score_bounds():
 
 def test_compute_dividend_quality_sorted_desc():
     rows = [
-        {"name": "Low",  "dividend_yield_recent": 1.5, "continuous_dividend_growth": 0,
+        {"name": "Low",  "dividends_yield_current": 1.5, "continuous_dividend_growth": 0,
          "payout_ratio": 90.0, "sector": "S"},
-        {"name": "High", "dividend_yield_recent": 5.0, "continuous_dividend_growth": 30,
+        {"name": "High", "dividends_yield_current": 5.0, "continuous_dividend_growth": 30,
          "payout_ratio": 45.0, "sector": "S"},
-        {"name": "Mid",  "dividend_yield_recent": 3.0, "continuous_dividend_growth": 10,
+        {"name": "Mid",  "dividends_yield_current": 3.0, "continuous_dividend_growth": 10,
          "payout_ratio": 55.0, "sector": "S"},
     ]
     result = _compute_dividend_quality(rows, min_yield=1.0)
@@ -2149,11 +2149,11 @@ def test_compute_dividend_quality_sorted_desc():
 
 def test_compute_dividend_quality_sector_breakdown():
     rows = [
-        {"name": "U1", "dividend_yield_recent": 4.0, "continuous_dividend_growth": 20,
+        {"name": "U1", "dividends_yield_current": 4.0, "continuous_dividend_growth": 20,
          "payout_ratio": 65.0, "sector": "Utilities"},
-        {"name": "U2", "dividend_yield_recent": 3.5, "continuous_dividend_growth": 8,
+        {"name": "U2", "dividends_yield_current": 3.5, "continuous_dividend_growth": 8,
          "payout_ratio": 60.0, "sector": "Utilities"},
-        {"name": "C1", "dividend_yield_recent": 2.0, "continuous_dividend_growth": 5,
+        {"name": "C1", "dividends_yield_current": 2.0, "continuous_dividend_growth": 5,
          "payout_ratio": 40.0, "sector": "Consumer"},
     ]
     result = _compute_dividend_quality(rows, min_yield=1.0)
@@ -2172,11 +2172,11 @@ def test_compute_dividend_quality_sector_breakdown():
 
 def test_compute_dividend_quality_by_category_counts():
     rows = [
-        {"name": "A1", "dividend_yield_recent": 3.0, "continuous_dividend_growth": 26, "sector": "S"},
-        {"name": "A2", "dividend_yield_recent": 2.5, "continuous_dividend_growth": 30, "sector": "S"},
-        {"name": "Ac", "dividend_yield_recent": 2.0, "continuous_dividend_growth": 15, "sector": "S"},
-        {"name": "Gr", "dividend_yield_recent": 1.5, "continuous_dividend_growth": 3,  "sector": "S"},
-        {"name": "Pa", "dividend_yield_recent": 4.0, "continuous_dividend_growth": 0,  "sector": "S"},
+        {"name": "A1", "dividends_yield_current": 3.0, "continuous_dividend_growth": 26, "sector": "S"},
+        {"name": "A2", "dividends_yield_current": 2.5, "continuous_dividend_growth": 30, "sector": "S"},
+        {"name": "Ac", "dividends_yield_current": 2.0, "continuous_dividend_growth": 15, "sector": "S"},
+        {"name": "Gr", "dividends_yield_current": 1.5, "continuous_dividend_growth": 3,  "sector": "S"},
+        {"name": "Pa", "dividends_yield_current": 4.0, "continuous_dividend_growth": 0,  "sector": "S"},
     ]
     result = _compute_dividend_quality(rows, min_yield=1.0)
     cats = result["by_category"]
@@ -2191,9 +2191,9 @@ def test_compute_dividend_quality_payout_extremes():
     # Extreme payout (>100%) gets 0.0, which reduces dq_score.
     # Healthy payout (50%) gets 1.0, which raises dq_score.
     rows = [
-        {"name": "Healthy",  "dividend_yield_recent": 3.0, "continuous_dividend_growth": 5,
+        {"name": "Healthy",  "dividends_yield_current": 3.0, "continuous_dividend_growth": 5,
          "payout_ratio": 50.0, "sector": "S"},
-        {"name": "Extreme",  "dividend_yield_recent": 3.0, "continuous_dividend_growth": 5,
+        {"name": "Extreme",  "dividends_yield_current": 3.0, "continuous_dividend_growth": 5,
          "payout_ratio": 200.0, "sector": "S"},
     ]
     result = _compute_dividend_quality(rows, min_yield=1.0)

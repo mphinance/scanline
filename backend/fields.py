@@ -131,7 +131,7 @@ _PROFITABILITY = [
 ]
 
 _DIVIDENDS = [
-    _f("dividend_yield_recent", "Dividend Yield %", "Dividends", "pct", "%"),
+    _f("dividends_yield_current", "Dividend Yield %", "Dividends", "pct", "%"),
     _f("dividends_yield", "Div Yield (TTM) %", "Dividends", "pct", "%"),
     _f("dps_common_stock_prim_issue_fy", "DPS FY", "Dividends", "num", "$"),
     _f("dividends_per_share_fq", "DPS FQ", "Dividends", "num", "$"),
