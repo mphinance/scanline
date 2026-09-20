@@ -2487,7 +2487,7 @@ def _payout_health(pr: float | None) -> float:
 def _compute_dividend_quality(rows: list[dict], min_yield: float = 1.0) -> dict:
     """Rank dividend-paying rows by a composite Dividend Quality Score (dq_score).
 
-    Filters to rows with dividend_yield_recent >= min_yield. For each qualifying
+    Filters to rows with dividends_yield_current >= min_yield. For each qualifying
     row a raw score is computed from three components:
       yield_norm:   min(yield_pct / 10.0, 1.0)  [10%+ maps to 1.0]
       growth_norm:  min(years_growing / 50.0, 1.0) [50+ years maps to 1.0]
@@ -2511,7 +2511,7 @@ def _compute_dividend_quality(rows: list[dict], min_yield: float = 1.0) -> dict:
     """
     qualified: list[dict] = []
     for row in rows:
-        yield_pct = row.get("dividend_yield_recent")
+        yield_pct = row.get("dividends_yield_current")
         if not isinstance(yield_pct, (int, float)) or isinstance(yield_pct, bool):
             continue
         if yield_pct < min_yield:
@@ -2670,18 +2670,18 @@ def dividend_screen(
     guarded, guard = _otc_guard(market, filters, include_otc)
     base_filters = [Filter(**f) for f in guarded]
     base_filters.append(
-        Filter(field="dividend_yield_recent", op=">", value=max(0.0, min_yield))
+        Filter(field="dividends_yield_current", op=">", value=max(0.0, min_yield))
     )
     req = ScreenRequest(
         market=market,
         filters=base_filters,
         columns=[
             "name", "close", "change", "sector", "market_cap_basic",
-            "dividend_yield_recent", "continuous_dividend_payout",
+            "dividends_yield_current", "continuous_dividend_payout",
             "continuous_dividend_growth", "payout_ratio",
             "return_on_equity", "Perf.1M",
         ],
-        sort=[SortKey(field="dividend_yield_recent", dir="desc")],
+        sort=[SortKey(field="dividends_yield_current", dir="desc")],
         limit=max(1, min(limit, 2000)),
     )
     resp = run_screen(req)
