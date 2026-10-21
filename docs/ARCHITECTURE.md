@@ -7,11 +7,11 @@ live. See `AGENTS.md` for the rules and `docs/MCP.md` for the MCP surface.
 
 ```
                  +-------------------+
-   HTTP  ----->  |  backend/app.py   |  (TTL cache, JSON shaping)
+   HTTP  ----->  |  scanline/app.py   |  (TTL cache, JSON shaping)
                  +---------+---------+
                            |
    MCP   ----->  +---------v-------------------+
- mcp_server.py   |  backend/pipeline.py        |   run_screen(ScreenRequest)
+ mcp_server.py   |  scanline/pipeline.py        |   run_screen(ScreenRequest)
                  |   1. build query columns    |
                  |   2. screener.run_query --------> tradingview-screener -> TradingView scanner
                  |   3. analytics over rows    |
@@ -19,7 +19,7 @@ live. See `AGENTS.md` for the rules and `docs/MCP.md` for the MCP surface.
                  +---------+-------------------+
                            |
                  +---------v---------+
-                 | backend/analytics |  computed columns, stats, factor model
+                 | scanline/analytics |  computed columns, stats, factor model
                  +-------------------+
 ```
 
@@ -31,7 +31,7 @@ adds its own small cache. Neither reimplements the pipeline.
 
 ## A screen, step by step
 
-1. **Request.** A `ScreenRequest` (`backend/models.py`): market, filters,
+1. **Request.** A `ScreenRequest` (`scanline/models.py`): market, filters,
    columns, match (all/any), computed columns, stats, factor weights, sort,
    limit, offset.
 2. **Column planning** (`pipeline._query_columns`). The query needs not just the
@@ -43,7 +43,7 @@ adds its own small cache. Neither reimplements the pipeline.
    each `{field, op, value}` into a column condition (`_apply_op`), applies the
    server-side sort and the offset/limit, and runs it. Every upstream call is
    wrapped so a failure becomes a clean `ScreenerError`, never a 500 stacktrace.
-4. **Analytics** (`backend/analytics.py`), over the returned rows:
+4. **Analytics** (`scanline/analytics.py`), over the returned rows:
    - **Computed columns:** a sandboxed AST evaluator (`safe_eval`). Operators
      `+ - * / % **` and functions `abs min max round sqrt log ln floor ceil`.
      It rejects attribute access, subscripts, names with `__`, strings, and any
@@ -59,7 +59,7 @@ adds its own small cache. Neither reimplements the pipeline.
 
 ## Fields
 
-`backend/fields.py` holds a curated, grouped, typed catalog (~190 friendly
+`scanline/fields.py` holds a curated, grouped, typed catalog (~190 friendly
 fields) layered over the full TradingView field universe (1000+), loaded from
 `fields_all.json` (generated offline by `gen_fields.py`, no runtime network
 call). `validate_field` accepts any catalog field and any catalog field carrying
@@ -68,7 +68,7 @@ columns work everywhere, including the MCP `analyze` tool's multi-timeframe read
 
 ## The MCP layer
 
-`backend/mcp_server.py` wraps the same engine. Discovery and screening tools call
+`scanline/mcp_server.py` wraps the same engine. Discovery and screening tools call
 `run_screen`; the symbol-intelligence tools (`analyze`, `technical_rating`,
 `chart`, ...) resolve a row via `_resolve_row` and compose TradingView's own
 fields into structured reads. The `analyze` tool pulls RSI and MACD on every
@@ -86,7 +86,7 @@ market.
 
 ## Caching and resilience
 
-A small in-memory TTL cache (`backend/cache.py`) keyed by a hash of the request
+A small in-memory TTL cache (`scanline/cache.py`) keyed by a hash of the request
 sits in front of the engine in both front doors. It also softens TradingView's
 rate-limit behavior under bursty agent use. The MCP `server_stats` tool reports
 the cache hit rate and error count.

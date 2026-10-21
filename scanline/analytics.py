@@ -47,6 +47,13 @@ _ALLOWED_NODES = (
 )
 
 
+# Bounds on exponentiation and expression size. Without them "9**9**9**9" pins a
+# core and takes the whole server down with it.
+_MAX_EXPONENT = 64
+_MAX_POW_BASE = 1e9
+_MAX_EXPR_LEN = 500
+
+
 class _SafetyError(ValueError):
     """Raised when an expression contains a disallowed construct."""
 
@@ -130,6 +137,10 @@ def _eval_node(node: ast.AST, row: dict) -> Any:
                 raise ZeroDivisionError("floordiv by zero")
             return left // right
         if isinstance(op, ast.Pow):
+            # Unbounded exponentiation pins a core ("9**9**9**9"), so cap both
+            # sides and reject any result that is not a sane float.
+            if abs(right) > _MAX_EXPONENT or abs(left) > _MAX_POW_BASE:
+                raise _SafetyError("exponent out of range")
             return left ** right
         raise _SafetyError("unsafe expression")
 
@@ -147,6 +158,8 @@ def safe_eval(expr: str, row: dict) -> float | None:
     Returns a number, or None when a value is missing or division by zero
     occurs. Raises ValueError("unsafe expression") for disallowed syntax.
     """
+    if len(expr) > _MAX_EXPR_LEN:
+        raise _SafetyError("expression too long")
     tree = ast.parse(expr, mode="eval")
     _check(tree)
     try:

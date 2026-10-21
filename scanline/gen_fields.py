@@ -1,6 +1,6 @@
 """Generate the complete TradingView field catalog from the live metainfo.
 
-Run once to (re)build fields_all.json: python backend/gen_fields.py
+Run once to (re)build fields_all.json: python scanline/gen_fields.py
 The app loads that JSON at import, so there is no network call at runtime.
 """
 

@@ -1,6 +1,6 @@
 # MCP reference
 
-The SCANLINE MCP server (`backend/mcp_server.py`) exposes the live screen
+The SCANLINE MCP server (`scanline/mcp_server.py`) exposes the live screen
 engine over the Model Context Protocol so any MCP client can screen, score,
 rank, and read charts. Built on `fastmcp`. Pure TradingView data, no account
 needed (data is live and delayed).
@@ -187,6 +187,6 @@ Canned workflows the client can launch:
   rate-limit behavior under bursty agent use. `server_stats` reports the hit rate.
 - The MCP server imports the backend modules directly, so it works without the
   web app running, and a screen behaves identically to the HTTP API (both call
-  `backend.pipeline.run_screen`).
+  `scanline.pipeline.run_screen`).
 - Tests: `tests/test_mcp.py`. Offline tests cover wiring and the pure helpers;
   `@pytest.mark.live` tests exercise the real data tools.

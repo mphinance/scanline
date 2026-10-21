@@ -1,6 +1,6 @@
 """FastAPI app: routes, static mount, CORS.
 
-Thin HTTP layer over the shared screen pipeline (backend/pipeline.py): cache
+Thin HTTP layer over the shared screen pipeline (scanline/pipeline.py): cache
 check, delegate to run_screen, stamp cache metadata, serve the static frontend.
 """
 
@@ -97,15 +97,15 @@ def _find_frontend() -> str | None:
     """Locate the static frontend, or None if this is an API-only install.
 
     Three shapes have to work: an explicit override, a git checkout where
-    frontend/ sits beside backend/, and an installed wheel where the same files
-    land next to the package as scanline_frontend (see pyproject.toml's
-    force-include). Both of the latter share a parent, so they are one lookup.
+    frontend/ sits beside scanline/, and an installed wheel where the same files
+    land inside the package as scanline/static (see pyproject.toml's
+    force-include).
     """
-    parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.environ.get("SCANLINE_FRONTEND_DIR", "").strip(),
-        os.path.join(parent, "frontend"),
-        os.path.join(parent, "scanline_frontend"),
+        os.path.join(os.path.dirname(here), "frontend"),
+        os.path.join(here, "static"),
     ]
     for path in candidates:
         if path and os.path.exists(os.path.join(path, "index.html")):
