@@ -67,3 +67,33 @@ jobs:
             fi
           done < <(git ls-files -z)
           exit $fail
+
+  wheel-smoke:
+    # Build the wheel, install it into a clean venv, and make it serve. Catches
+    # packaging bugs (missing static files, broken entry points) that tests run
+    # against the source tree cannot see.
+    name: wheel-smoke (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.10" }
+          - { os: ubuntu-latest, python: "3.12" }
+          - { os: macos-latest, python: "3.12" }
+          - { os: windows-latest, python: "3.12" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Build the wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+
+      - name: Install, launch, and probe
+        shell: bash
+        run: python .github/scripts/wheel_smoke.py "dist/*.whl"
