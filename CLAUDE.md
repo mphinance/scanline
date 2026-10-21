@@ -35,7 +35,7 @@ node --test frontend/js/*.test.mjs          # frontend logic tests
 - Screen engine: `scanline/pipeline.py` (shared by the HTTP API and the MCP server).
 - Analytics (sandboxed expressions, stats, factor model): `scanline/analytics.py`.
 - Field catalog: `scanline/fields.py`. Presets: `scanline/presets.py`.
-- MCP server (27 tools, 4 prompts, 3 resources): `scanline/mcp_server.py`. Reference: `docs/MCP.md`.
+- MCP server (28 tools, 4 prompts, 3 resources): `scanline/mcp_server.py`. Reference: `docs/MCP.md`.
 - Frontend feature modules: `frontend/js/` (register via `window.Screener.registerModule`).
 - Static showcase (Pages): `showcase/`.
 - Packaging: `pyproject.toml` (entry points), `Dockerfile`, `docker-compose.yml`.
