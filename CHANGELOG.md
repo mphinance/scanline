@@ -10,7 +10,8 @@ First public release. A stranger can go from nothing to a working screener with 
 
 ### Added
 
-- Published to PyPI as `scanline-screener`. The commands stay `scanline` and `scanline-mcp`.
+- Published to PyPI as `scanline-screener`. The commands stay `scanline` and `scanline-mcp`;
+  `scanline-screener` is an alias for `scanline` so `uvx scanline-screener` works.
 - `scanline` opens your browser once the server is up. `--no-browser` or
   `SCANLINE_NO_BROWSER` skips it. It never opens for a non-loopback bind, inside Docker, or under CI.
 - If the default port is busy, `scanline` tries the next 10 and says so. An explicit `--port`
