@@ -10,10 +10,24 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [{ name = "Michael Hanko" }]
-keywords = ["tradingview", "screener", "market", "mcp", "finance"]
+keywords = [
+    "tradingview", "screener", "stock-screener", "market", "finance", "trading",
+    "quant", "mcp", "model-context-protocol", "fastapi",
+]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial :: Investment",
 ]
 
@@ -36,6 +50,8 @@ dev = ["pytest>=8.0"]
 Homepage = "https://github.com/mphinance/scanline"
 Showcase = "https://mphinance.github.io/scanline/"
 Source = "https://github.com/mphinance/scanline"
+Changelog = "https://github.com/mphinance/scanline/blob/master/CHANGELOG.md"
+Issues = "https://github.com/mphinance/scanline/issues"
 
 [project.scripts]
 # The two things a user runs. Both work from a checkout via run.py and
@@ -44,11 +60,14 @@ scanline = "scanline.cli:main"
 scanline-mcp = "scanline.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["scanline"]
+# `frontend` is listed so the wheel picks it up, and `sources` rewrites it to
+# scanline/static on the way in. force-include would do the same but ignores
+# `exclude`, which is how *.test.mjs used to ship.
+include = ["scanline", "frontend"]
 exclude = ["*.test.mjs"]
 
 # The frontend is static assets that live outside the Python package, so the
 # wheel carries them inside it as scanline/static. scanline/app.py looks
 # for this location when the sibling frontend/ folder of a checkout is absent.
-[tool.hatch.build.targets.wheel.force-include]
+[tool.hatch.build.targets.wheel.sources]
 "frontend" = "scanline/static"
