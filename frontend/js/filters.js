@@ -14,6 +14,8 @@
 //
 // No em dashes anywhere.
 
+import { pickDefaultField } from './defaults.js';
+
 (function () {
   'use strict';
 
@@ -101,14 +103,14 @@
 }
 .flt-title {
   display: flex; align-items: center; gap: var(--sp-2);
-  font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
   text-transform: uppercase; color: var(--text);
 }
 .flt-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; height: 18px; padding: 0 5px;
   border-radius: 999px;
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
   color: var(--cyan);
   border: 1px solid rgba(0, 240, 255, 0.45);
   background: rgba(0, 240, 255, 0.08);
@@ -116,7 +118,7 @@
 }
 .flt-count.flt-zero { color: var(--muted); border-color: var(--line); background: transparent; box-shadow: none; }
 .flt-clear {
-  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--muted); background: transparent; border: none; cursor: pointer;
   padding: 2px 4px; transition: color 0.15s ease;
 }
@@ -171,12 +173,12 @@
 
 .flt-val-row { display: flex; gap: var(--sp-1); }
 .flt-val-row .flt-val { flex: 1 1 0; min-width: 0; }
-.flt-val-sep { align-self: center; color: var(--muted); font-size: 10px; font-family: var(--font-mono); }
+.flt-val-sep { align-self: center; color: var(--muted); font-size: 12px; font-family: var(--font-mono); }
 
 .flt-actions { display: flex; align-items: center; gap: var(--sp-2); padding-top: var(--sp-1); }
 .flt-add {
   flex: 1 1 auto;
-  font-size: 11px; letter-spacing: 0.06em;
+  font-size: 12px; letter-spacing: 0.06em;
   padding: 6px 10px;
   color: var(--cyan);
   background: rgba(0, 240, 255, 0.05);
@@ -194,7 +196,7 @@
 }
 .flt-seg {
   padding: 4px 12px;
-  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
   font-family: var(--font-mono);
   color: var(--muted); background: transparent; border: none; cursor: pointer;
   transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
@@ -219,7 +221,7 @@
 .flt-empty {
   padding: var(--sp-3);
   text-align: center;
-  font-size: 11px; color: var(--muted);
+  font-size: 12px; color: var(--muted);
   border: 1px dashed var(--line); border-radius: var(--radius-sm);
 }
 `;
@@ -260,8 +262,9 @@
     panel.appendChild(wrap);
 
     function blankRow() {
-      const firstNumeric = fields.find((f) => isNumericType(f.type)) || fields[0];
-      const fid = firstNumeric ? firstNumeric.id : '';
+      const numeric = fields.filter((f) => isNumericType(f.type));
+      const used = typeof rows !== 'undefined' && Array.isArray(rows) ? rows.map((r) => r.field) : [];
+      const fid = pickDefaultField(numeric.length ? numeric : fields, used);
       const meta = fieldIndex[fid];
       const ops = opsForField(meta);
       return { field: fid, op: ops[0] ? ops[0].op : '>', v1: '', v2: '', list: '', vfield: defaultCrossField(fid) };

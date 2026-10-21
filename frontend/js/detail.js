@@ -142,7 +142,7 @@
   flex: 0 0 auto;
 }
 .dtl-spark-cap {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
@@ -158,7 +158,7 @@
 }
 .dtl-group { margin-bottom: var(--sp-4); }
 .dtl-group-title {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--purple);
@@ -175,7 +175,7 @@
 }
 .dtl-k {
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -203,7 +203,7 @@
   background: rgba(10, 10, 14, 0.6);
 }
 .dtl-refresh .dtl-rf-label {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
@@ -216,7 +216,7 @@
   border-radius: var(--radius-sm);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   outline: none;
 }
@@ -350,15 +350,27 @@
     host.appendChild(scrim);
   }
 
-  function openDrawer() {
+  let returnFocus = null;
+
+  function openDrawer(trigger) {
     if (!scrim) return;
+    if (!isOpen()) returnFocus = trigger || document.activeElement;
     // Force a reflow so the transform transition runs from the closed state.
     void scrim.offsetWidth;
     scrim.classList.add('open');
+    drawerEl.setAttribute('aria-modal', 'true');
+    drawerEl.tabIndex = -1;
+    drawerEl.focus({ preventScroll: true });
   }
 
   function closeDrawer() {
-    if (scrim) scrim.classList.remove('open');
+    if (!scrim || !scrim.classList.contains('open')) return;
+    scrim.classList.remove('open');
+    const target = returnFocus;
+    returnFocus = null;
+    if (target && target.isConnected && typeof target.focus === 'function') {
+      target.focus({ preventScroll: true });
+    }
   }
 
   function isOpen() {
@@ -548,13 +560,21 @@
     }
   }
 
+  // The element focus should return to: the focused row, else the row by ticker.
+  function rowTrigger(row) {
+    const a = document.activeElement;
+    if (a && a.tagName === 'TR') return a;
+    const key = String(row.ticker || row.name || '').replace(/"/g, '\\"');
+    return key ? document.querySelector('#table-host tr[data-ticker="' + key + '"]') : null;
+  }
+
   function onRowClick(ev) {
     const row = ev.detail;
     if (!row || !ctxRef) return;
     renderToken += 1;
     const token = renderToken;
     renderDrawer(row, null);
-    openDrawer();
+    openDrawer(rowTrigger(row));
     maybeFetchPerf(row, token);
   }
 

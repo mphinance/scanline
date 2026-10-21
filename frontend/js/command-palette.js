@@ -103,7 +103,7 @@ function injectStyles() {
       flex: 0 0 auto;
       min-width: 64px;
       font-family: var(--font-mono);
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -129,12 +129,12 @@ function injectStyles() {
       padding: 8px 14px;
       border-top: 1px solid var(--line);
       background: rgba(10, 10, 14, 0.4);
-      font-size: 10px;
+      font-size: 12px;
       color: var(--muted);
     }
     .cmdk-foot kbd {
       font-family: var(--font-mono);
-      font-size: 10px;
+      font-size: 12px;
       padding: 1px 5px;
       border: 1px solid var(--line);
       border-radius: 3px;

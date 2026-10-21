@@ -40,6 +40,8 @@ function createStore() {
     factorPresets: [],
     loading: false,
     error: null,
+    keptPrevious: false,
+    resultMarket: null,
   };
 
   const subscribers = new Set();
@@ -115,18 +117,34 @@ function createStore() {
       state.loading = true;
       state.error = null;
       notify();
+      const prev = state.result;
+      const prevMarket = state.resultMarket;
+      const market = state.market;
+      let result = null;
+      let err = null;
       try {
-        const result = await api.screen(store.buildScreenBody());
-        state.result = result;
-        // Backend returns 200 with meta.error on a bad query.
-        state.error = (result && result.meta && result.meta.error) || null;
-      } catch (err) {
-        state.result = { count: 0, rows: [], columns: [], meta: { error: String(err.message || err) } };
-        state.error = String(err.message || err);
-      } finally {
-        state.loading = false;
-        notify();
+        result = await api.screen(store.buildScreenBody());
+        // Backend may answer 200 with meta.error on a bad query.
+        err = (result && result.meta && result.meta.error) || null;
+      } catch (e) {
+        err = String((e && e.message) || e);
       }
+      if (err) {
+        // Keep the last good table for the same market so a flaky refresh does
+        // not blank the screen.
+        const hadGood =
+          prev && Array.isArray(prev.rows) && prev.rows.length && !(prev.meta && prev.meta.error) && prevMarket === market;
+        state.result = hadGood ? prev : { count: 0, rows: [], columns: [], meta: { error: err } };
+        state.keptPrevious = !!hadGood;
+        state.error = err;
+      } else {
+        state.result = result;
+        state.resultMarket = market;
+        state.keptPrevious = false;
+        state.error = null;
+      }
+      state.loading = false;
+      notify();
       return state.result;
     },
 

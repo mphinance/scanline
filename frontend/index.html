@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SCANLINE</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0a0c'/%3E%3Cpath d='M6 9h20M6 16h20M6 23h20' stroke='%2300f0ff' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M6 16h20' stroke='%23ff006e' stroke-width='2.5' stroke-linecap='round' opacity='.9'/%3E%3C/svg%3E" />
   <meta name="description" content="A quant analytics layer over live TradingView market data, in synthwave." />
 
   <!-- Design system: tokens + base, then layout grid, then table styling. -->
@@ -22,13 +23,19 @@
   <!-- Boot sweep, removed after the power-on sequence finishes. -->
   <div id="boot" aria-hidden="true"></div>
 
+  <!-- First paint: shown until the catalog and first screen land. -->
+  <div id="boot-splash" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="splash-label">SCANLINE &middot; loading market data</div>
+  </div>
+
   <div id="app">
 
     <!-- ============ TOP BAR ============ -->
     <header id="topbar">
+      <button id="rail-toggle" type="button" aria-label="Open tools panel" aria-controls="left-rail" aria-expanded="false">&#9776;</button>
       <div class="brand">
-        <span class="brand-mark">&#9650; NEON</span>
-        <span class="brand-sub">Screener</span>
+        <span class="brand-mark">&#9650; SCANLINE</span>
       </div>
 
       <!-- market switcher slot (app.js fills this with a styled select) -->
@@ -36,7 +43,6 @@
 
       <!-- actions slot (later: saved screens, export, refresh toggle) -->
       <div id="topbar-actions">
-        <div class="slot-placeholder" id="topbar-actions-ph">actions load here</div>
       </div>
 
       <!-- status slot (app.js fills: market / matches / latency) -->
@@ -50,35 +56,35 @@
       <section class="rail-section">
         <div class="rail-head"><span class="rail-title">Presets</span></div>
         <div class="rail-body">
-          <div id="preset-panel" class="slot-placeholder">preset module loads here</div>
+          <div id="preset-panel"></div>
         </div>
       </section>
 
       <section class="rail-section">
         <div class="rail-head"><span class="rail-title">Filters</span></div>
         <div class="rail-body">
-          <div id="filter-panel" class="slot-placeholder">filter module loads here</div>
+          <div id="filter-panel"></div>
         </div>
       </section>
 
       <section class="rail-section">
         <div class="rail-head"><span class="rail-title">Columns</span></div>
         <div class="rail-body">
-          <div id="column-panel" class="slot-placeholder">column module loads here</div>
+          <div id="column-panel"></div>
         </div>
       </section>
 
       <section class="rail-section">
         <div class="rail-head"><span class="rail-title">Factor Score</span></div>
         <div class="rail-body">
-          <div id="factor-panel" class="slot-placeholder">factor module loads here</div>
+          <div id="factor-panel"></div>
         </div>
       </section>
 
       <section class="rail-section">
         <div class="rail-head"><span class="rail-title">Saved</span></div>
         <div class="rail-body">
-          <div id="saved-panel" class="slot-placeholder">saved screens load here</div>
+          <div id="saved-panel"></div>
         </div>
       </section>
     </aside>
@@ -101,15 +107,16 @@
     <footer id="app-footer">
       <span>SCANLINE</span>
       <span class="sep">|</span>
-      <span>quant analytics over live market data</span>
+      <span class="tagline">quant analytics over live market data</span>
       <span class="sep">|</span>
-      <span>no auth, delayed data</span>
+      <a id="mode-badge" class="mode-badge mode-delayed" href="https://github.com/mphinance/scanline/blob/master/docs/REALTIME.md" target="_blank" rel="noopener noreferrer" title="Quotes are delayed. Real-time data needs a TradingView session cookie. Click for setup steps.">DELAYED DATA</a>
     </footer>
 
   </div>
 
   <!-- ============ FLOATING REGIONS (outside the grid) ============ -->
   <!-- row detail drawer mounts here -->
+  <div id="rail-scrim" aria-hidden="true"></div>
   <div id="drawer-host"></div>
   <!-- command palette (Ctrl/Cmd-K) mounts here -->
   <div id="command-palette-host"></div>
@@ -148,6 +155,7 @@
   <script type="module" src="js/timeframes.js"></script>
   <!-- Wave 7 modules -->
   <script type="module" src="js/panels.js"></script>
+  <script type="module" src="js/firstrun.js"></script>
   <!-- =================================================================== -->
 
   <!-- Power-on: drop the boot class once the sequence has played. -->
