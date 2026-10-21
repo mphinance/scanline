@@ -82,9 +82,9 @@ def _apply_op(c, op: str, value: Any):
         a, b = value
         return c.not_between(a, b)
     if op == "above_pct":
-        return c.above_pct(value)
+        return c.above_pct(*value)
     if op == "below_pct":
-        return c.below_pct(value)
+        return c.below_pct(*value)
     if op == "crosses":
         return c.crosses(value)
     if op == "crosses_above":

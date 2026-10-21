@@ -616,3 +616,31 @@ def test_run_query_live():
     assert res["count"] > 0
     assert len(res["rows"]) > 0
     assert "ticker" in res["columns"]
+
+
+def test_every_preset_builds_its_filters():
+    # Building the conditions is offline and exercises the operator mapping for
+    # real. above_pct/below_pct once took the wrong arity and three presets
+    # returned nothing while the suite stayed green.
+    from backend.screener import _build_conditions
+
+    for p in PRESETS:
+        _build_conditions(p.get("filters", []))
+
+
+def test_above_below_pct_build():
+    from backend.screener import _build_conditions
+
+    _build_conditions([{"field": "close", "op": "above_pct", "value": ["SMA50", 1.05]}])
+    _build_conditions([{"field": "close", "op": "below_pct", "value": ["SMA50", 0.95]}])
+
+
+def test_pow_cannot_hang_the_sandbox():
+    import time
+
+    t0 = time.time()
+    assert analytics.safe_eval("2**10", {}) == 1024
+    for expr in ("9**9**9**9", "(9**9)**(9**9)", "2**100000", "9" * 600):
+        with pytest.raises(ValueError):
+            analytics.safe_eval(expr, {})
+    assert time.time() - t0 < 1.0
