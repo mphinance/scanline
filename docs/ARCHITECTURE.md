@@ -89,4 +89,35 @@ market.
 A small in-memory TTL cache (`scanline/cache.py`) keyed by a hash of the request
 sits in front of the engine in both front doors. It also softens TradingView's
 rate-limit behavior under bursty agent use. The MCP `server_stats` tool reports
-the cache hit rate and error count.
+the cache hit rate and error count. The cache holds at most 256 entries (oldest
+evicted first), expired entries are swept on every write, and the key includes
+the data mode (`delayed`, `realtime`, `cookie_rejected`) but never a cookie.
+
+## Validation and errors
+
+`run_screen` validates before it queries: filter, column, sort, stat and factor
+fields against the catalog (`validate_field`), operators, and filter values
+(numbers, a real field id for cross-field compares, or text for text fields).
+Nothing is silently dropped. `match`, sort `dir`, stat `fn` and factor `dir` are
+`Literal` types, and `limit` is 1..1000 on the request model and every MCP tool.
+
+Every failure keeps one JSON shape: the normal screen body with
+`meta.error` (short human string), `meta.error_code` (stable machine string) and
+`meta.detail`. `POST /api/screen` also sets the status: 400 for bad requests
+(`unknown_field`, `unknown_sort_field`, `bad_value`, `bad_operator`,
+`unknown_market`, `invalid_request`), 502 for upstream failures
+(`upstream_unreachable`, `upstream_timeout`, `upstream_rate_limited`,
+`upstream_error`). Raw library text never reaches a response.
+
+A factor score is withheld (`null`, plus `meta.warnings`) when the weighted
+columns are under 20% populated, as happens for growth, value and quality
+factors on crypto and forex.
+
+## CORS and real-time mode
+
+CORS defaults to loopback origins only. `SCANLINE_CORS_ORIGINS` (a comma list,
+or `*`) overrides it. `/api/health` answers GET and HEAD and reports `mode`.
+
+An optional TradingView session cookie turns on real-time data; see
+[REALTIME.md](REALTIME.md). `scanline/realtime.py` owns the credential and
+`scanline/screener.py` is the only consumer of the raw value.
