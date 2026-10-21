@@ -337,6 +337,14 @@ def validate_field(field_id: str) -> bool:
     return False
 
 
+def field_type(field_id: str) -> str | None:
+    """Catalog type of a field (num, pct, price, int, str, bignum), or None when
+    the id is unknown. A timeframe suffix is stripped first."""
+    base = field_id.partition("|")[0] if "|" in field_id else field_id
+    entry = field_index.get(base)
+    return entry["type"] if entry else None
+
+
 # Sensible default columns per market kind. Stocks get fundamentals,
 # crypto and forex get the price-and-volume subset that actually populates.
 DEFAULT_COLUMNS: dict[str, list[str]] = {

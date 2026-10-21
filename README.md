@@ -5,21 +5,58 @@
 [![MCP](https://img.shields.io/badge/MCP-27_tools-b026ff)](AGENTS.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-00ff88)](LICENSE)
 
-A **quant analytics layer** on top of TradingView's data, in the synthwave / TraderDaddy /
-Bloomberg-terminal aesthetic.
+A live market screener for your own machine: TradingView's data, a quant analytics layer on
+top, and an MCP server so an AI agent can drive the same engine. Stocks, crypto, forex, futures,
+bonds, and CFDs. No account, no API key, one command.
 
-Powered by [`tradingview-screener`](https://github.com/shner-elmo/TradingView-Screener) for live,
-no-auth delayed data across stocks, crypto, forex, futures, bonds, and CFDs. Filtering is where it
-starts. The point of this build is everything you do to the data *after* it lands: computed
-columns, factor scoring, in-result statistics, multi-key sort, client-side analytics.
+```bash
+uvx scanline-screener
+```
 
-Drive it from the browser, from the HTTP API, or from an AI agent: the same engine is exposed
-over the **Model Context Protocol**, so Claude can screen, score, and rank markets for you in
-plain language. See [MCP server](#mcp-server-screen-from-an-agent) below.
+That starts the app on http://127.0.0.1:8000/ and opens it in your browser. The data is delayed
+and needs no key; see [docs/REALTIME.md](docs/REALTIME.md) for real-time.
 
-The repo is two halves. The **app** (`scanline/` + `frontend/`) is the full screener you run at
-home. The **showcase** (`showcase/`) is a static, pure-TradingView demo, a widget gallery plus a
-live Lightweight Charts panel, that deploys to GitHub Pages:
+## Install
+
+| Way | Command |
+|-----|---------|
+| uvx (nothing to install) | `uvx scanline-screener` |
+| pipx | `pipx install scanline-screener` then `scanline` |
+| Docker | `docker run --rm -p 127.0.0.1:8000:8000 ghcr.io/mphinance/scanline` |
+| From source | `git clone https://github.com/mphinance/scanline && cd scanline && pip install -r requirements.txt && python run.py` |
+
+The package is `scanline-screener` on PyPI; the commands are `scanline` (web app, also
+available as `scanline-screener` so `uvx` finds it) and `scanline-mcp` (MCP server). `scanline --no-browser` skips opening a tab. If port 8000 is busy it
+tries the next ten and tells you which one it took.
+
+**Why it runs on your machine.** TradingView data is fetched from your own IP, at human scale,
+the same way your browser talks to TradingView. That is why there is no hosted version and there
+will not be one: it cannot live on a cloud box. The
+[showcase](https://mphinance.github.io/scanline/) is the zero-install teaser. For real-time data
+instead of the delayed feed, see [docs/REALTIME.md](docs/REALTIME.md).
+
+### MCP, one line
+
+```bash
+claude mcp add scanline -- uvx --from scanline-screener scanline-mcp
+```
+
+Or in Claude Desktop's `claude_desktop_config.json`, or a project `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "scanline": {
+      "command": "uvx",
+      "args": ["--from", "scanline-screener", "scanline-mcp"]
+    }
+  }
+}
+```
+
+The repo is two halves. The **app** (`scanline/` + `frontend/`) is the full screener. The
+**showcase** (`showcase/`) is a static, pure-TradingView demo, a widget gallery plus a live
+Lightweight Charts panel, deployed to GitHub Pages:
 **[mphinance.github.io/scanline](https://mphinance.github.io/scanline/)**.
 
 ![Power on](docs/boot.gif)
@@ -138,24 +175,11 @@ python run_mcp.py --http 8765  # streamable-http for remote / multi-client
 
 ### Add it to your client
 
-Once `pip install .` has put `scanline-mcp` on your PATH, the config is two lines. Claude Desktop
-(`claude_desktop_config.json`) or a project `.mcp.json` for Claude Code:
+The one-liner and JSON config above use `uvx`, so nothing needs installing first. If you
+installed with `pipx install scanline-screener`, the config is simply
+`{"mcpServers": {"scanline": {"command": "scanline-mcp"}}}`.
 
-```json
-{
-  "mcpServers": {
-    "scanline": { "command": "scanline-mcp" }
-  }
-}
-```
-
-Claude Code can do it for you instead:
-
-```bash
-claude mcp add scanline -- scanline-mcp
-```
-
-If you would rather not install anything, point at the checkout with absolute paths:
+If you would rather point at a checkout, use absolute paths:
 
 ```json
 {
@@ -182,37 +206,21 @@ by my Value factor."* No TradingView account needed; data is live and delayed.
 
 ## Run it
 
-Scanline runs on your own machine. There is no hosted version and there is not going to be one:
-requests should come from the person looking at the screen, at human scale, the same way your
-browser talks to TradingView when you visit the site. Pick whichever of these you like.
+The install table at the top is the short version. A few more details.
 
-**Docker, nothing else installed:**
+**Docker Compose** builds from a checkout and publishes on loopback only:
 
 ```bash
 docker compose up
 ```
 
-**From a checkout:**
+Then open http://127.0.0.1:8000/. Data is delayed, no account and no API key needed. For
+real-time data see [docs/REALTIME.md](docs/REALTIME.md).
 
-```bash
-pip install -r requirements.txt
-python run.py
-```
-
-**As a command, from anywhere:**
-
-```bash
-pip install git+https://github.com/mphinance/scanline    # or `pip install .` in a checkout
-scanline               # the web app
-scanline-mcp           # the MCP server (stdio)
-```
-
-Then open http://127.0.0.1:8000/. Data is live and delayed, no account and no API key needed. For
-real-time data pass TradingView cookies through to `get_scanner_data`.
-
-The web app takes `--host` and `--port` and reads `SCANLINE_HOST` / `SCANLINE_PORT`; the MCP
-server takes `--http PORT` to switch off stdio. The default binds loopback only. Exposing it on a
-network is a deliberate step, not the default.
+The web app takes `--host`, `--port` and `--no-browser`, and reads `SCANLINE_HOST`,
+`SCANLINE_PORT` and `SCANLINE_NO_BROWSER`. The browser never opens for a non-loopback bind,
+inside Docker, or under CI. The MCP server takes `--http PORT` to switch off stdio. The default
+binds loopback only; exposing it on a network is a deliberate step, not the default.
 
 ```bash
 scanline --port 9000

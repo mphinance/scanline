@@ -1809,7 +1809,7 @@ def test_broad_america_tools_return_no_otc_by_default():
 
     resp = run_screen(ScreenRequest(
         market="america", columns=["name", "exchange"],
-        filters=[{"field": "exchange", "op": "==", "value": "OTC"}], limit=5000,
+        filters=[{"field": "exchange", "op": "==", "value": "OTC"}], limit=1000,
     ))
     assert not resp["meta"].get("error"), resp["meta"]["error"]
     otc = {r["name"] for r in resp["rows"]}

@@ -183,8 +183,20 @@ Canned workflows the client can launch:
 
 ## Notes
 
-- A short TTL cache sits in front of the engine to soften TradingView's
-  rate-limit behavior under bursty agent use. `server_stats` reports the hit rate.
+- A short TTL cache (256 entries max, expired entries swept on write) sits in
+  front of the engine to soften TradingView's rate-limit behavior under bursty
+  agent use. `server_stats` reports the hit rate. Keys include the data mode,
+  never a cookie.
+- `limit` is 1 to 1000 on every tool. Unknown filter, column, sort or stat
+  fields, bad operators and bad values return `{error, error_code, detail}`
+  naming the offender instead of an empty result. Successful screens carry
+  `mode` (`delayed`, `realtime`, `cookie_rejected`) and, when relevant,
+  `warnings` (for example a factor score withheld on empty columns).
+- `technical_rating` rejects unknown timeframes, `compare` returns `not_found`
+  for tickers that did not resolve and rejects unknown columns, and
+  `earnings_radar` requires an integer `horizon` of 1 to 365.
+- Real-time data is opt-in through the server's environment; see
+  [REALTIME.md](REALTIME.md).
 - The MCP server imports the backend modules directly, so it works without the
   web app running, and a screen behaves identically to the HTTP API (both call
   `scanline.pipeline.run_screen`).

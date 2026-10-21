@@ -9,3 +9,4 @@ fastmcp>=2.0
 # standard command, so it belongs here: without it that command fails on a fresh
 # install.
 pytest>=8.0
+httpx>=0.27

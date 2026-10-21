@@ -32,13 +32,13 @@ function injectStyles() {
   border: 1px solid rgba(0, 240, 255, 0.4);
   border-radius: var(--radius-sm);
   color: var(--cyan);
-  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
   letter-spacing: 0.04em; text-transform: uppercase;
   text-decoration: none; cursor: pointer;
   transition: box-shadow .15s ease, border-color .15s ease, background .15s ease;
 }
 .oi-btn:hover { border-color: var(--cyan); box-shadow: var(--glow-cyan); background: rgba(0,240,255,.14); }
-.oi-btn .oi-ext { font-size: 11px; opacity: .85; }
+.oi-btn .oi-ext { font-size: 12px; opacity: .85; }
 `;
   document.head.appendChild(style);
 }

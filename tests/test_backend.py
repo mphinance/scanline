@@ -644,3 +644,10 @@ def test_pow_cannot_hang_the_sandbox():
         with pytest.raises(ValueError):
             analytics.safe_eval(expr, {})
     assert time.time() - t0 < 1.0
+
+
+def test_pct_ops_need_a_field_and_ratio():
+    from scanline.screener import ScreenerError, _build_conditions
+
+    with pytest.raises(ScreenerError):
+        _build_conditions([{"field": "close", "op": "above_pct", "value": 0.5}])

@@ -41,9 +41,10 @@
 // =====================================================================
 
 import store from './state.js';
-import api from './api.js';
+import api, { formatLatency } from './api.js';
 import * as format from './format.js';
 import { TableView } from './table.js';
+import { renderModeBadge } from './mode.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -119,8 +120,6 @@ function renderStatus() {
   const result = s.result;
   const dotClass = s.loading ? 'busy' : s.error ? 'err' : '';
   const count = result ? result.count : 0;
-  const ms = result && result.meta ? result.meta.ms : 0;
-  const cached = result && result.meta && result.meta.cached;
   bar.innerHTML = '';
   const dot = document.createElement('span');
   dot.className = 'dot ' + dotClass;
@@ -128,7 +127,7 @@ function renderStatus() {
   const parts = [
     ['MARKET', s.market],
     ['MATCHES', count.toLocaleString('en-US')],
-    ['LATENCY', ms + 'ms' + (cached ? ' cached' : '')],
+    ['LATENCY', s.error && !s.keptPrevious ? '--' : formatLatency(result && result.meta)],
   ];
   for (const [k, v] of parts) {
     const span = document.createElement('span');
@@ -153,17 +152,51 @@ function renderOverlay() {
   }
 }
 
+// Inline banner shown when a refresh failed but the previous table was kept.
+function renderErrorBanner() {
+  const s = store.state;
+  let banner = el('screen-error');
+  const show = !!s.error && s.keptPrevious && !s.loading;
+  if (!show) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'screen-error';
+    banner.setAttribute('role', 'alert');
+    const msg = document.createElement('span');
+    msg.className = 'screen-error-msg';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn btn-primary';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => store.runScreen());
+    banner.append(msg, retry);
+    const host = el('table-host');
+    host.parentNode.insertBefore(banner, host);
+  }
+  banner.querySelector('.screen-error-msg').textContent = 'Refresh failed: ' + s.error.replace(/[.\s]+$/, '') + '. Showing the previous results.';
+}
+
+function dismissSplash() {
+  const splash = el('boot-splash');
+  if (!splash) return;
+  splash.classList.add('done');
+  setTimeout(() => splash.remove(), 400);
+}
+
 let _lastResult = null;
 function onStateChange() {
   renderStatus();
   renderOverlay();
+  renderErrorBanner();
   const s = store.state;
   // Re-render the table only when the result object actually changed.
   if (s.result && s.result !== _lastResult) {
     _lastResult = s.result;
     table.setFieldsIndex(s.fieldIndex);
     table.render(s.result);
-    if (s.error) toast(s.error, { title: 'Screen error', kind: 'err' });
   }
 }
 
@@ -204,9 +237,37 @@ function buildTopbarControls() {
 }
 
 // ---- Bootstrap sequence.
+let _subscribed = false;
+
+function showBootFailure(message) {
+  const host = el('table-host');
+  if (!host) return;
+  host.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'empty-card';
+  card.setAttribute('role', 'alert');
+  const title = document.createElement('div');
+  title.className = 'empty-title';
+  title.textContent = 'COULD NOT START';
+  const body = document.createElement('div');
+  body.textContent = message;
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'btn btn-primary';
+  retry.textContent = 'Retry';
+  retry.addEventListener('click', () => boot());
+  card.append(title, body, retry);
+  host.appendChild(card);
+}
+
 async function boot() {
-  store.subscribe(onStateChange);
+  if (!_subscribed) {
+    store.subscribe(onStateChange);
+    _subscribed = true;
+  }
   table.container = el('table-host');
+  const splash = el('boot-splash');
+  if (splash) splash.classList.remove('done');
 
   try {
     const [markets, fieldsResp, presetsResp] = await Promise.all([
@@ -222,21 +283,33 @@ async function boot() {
       columns: defaultColumns('america'),
     });
   } catch (err) {
-    toast('Could not load the field catalog. Is the backend running?', { title: 'Boot failed', kind: 'err' });
     console.error('boot catalog load failed:', err);
+    showBootFailure(String((err && err.message) || err));
+    dismissSplash();
     return;
   }
 
   buildTopbarControls();
 
+  // Data-mode badge; never blocks boot. No `mode` field means delayed.
+  api.getHealth().then((h) => renderModeBadge(h && h.mode), () => renderModeBadge('delayed'));
+
   // Initial america screen.
   await store.runScreen();
+  dismissSplash();
 
   // Run any feature modules that registered, then flush ready callbacks.
-  _booted = true;
-  for (const mod of _modules) runModule(mod);
-  while (_readyQueue.length) _readyQueue.shift()();
+  if (!_booted) {
+    _booted = true;
+    for (const mod of _modules) runModule(mod);
+    while (_readyQueue.length) _readyQueue.shift()();
+  }
 }
+
+document.addEventListener('screener:retry', () => {
+  if (_booted) store.runScreen();
+  else boot();
+});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot);

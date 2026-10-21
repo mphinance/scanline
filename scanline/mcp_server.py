@@ -28,13 +28,15 @@ import datetime as dt
 import os
 import sys
 import time
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
+from pydantic import Field
 
-from .cache import TTLCache, make_key
+from .cache import TTLCache
 from .fields import CURATED_IDS, FIELDS, field_index, validate_field
 from .models import (
+    MAX_LIMIT,
     Computed,
     Factor,
     FactorWeight,
@@ -43,11 +45,15 @@ from .models import (
     SortKey,
     Stat,
 )
-from .pipeline import run_screen
+from .pipeline import request_key, run_screen
 from .presets import FACTOR_PRESETS, NO_OTC, PRESETS
 from .screener import MARKETS
 
 mcp = FastMCP("scanline")
+
+# Row-count parameters are bounded identically on every tool and the HTTP API.
+Limit = Annotated[int, Field(ge=1, le=MAX_LIMIT)]
+Offset = Annotated[int, Field(ge=0)]
 
 # Resilience + a tiny bit of self-awareness for the stats tool.
 _cache = TTLCache(ttl_seconds=20)
@@ -64,8 +70,8 @@ OPERATORS: list[dict] = [
     {"op": "!=", "value": "number, string, or field id", "desc": "not equal"},
     {"op": "between", "value": "[low, high]", "desc": "inclusive range"},
     {"op": "not_between", "value": "[low, high]", "desc": "outside a range"},
-    {"op": "above_pct", "value": "[field id, fraction]", "desc": "within fraction below a field, e.g. close above_pct [price_52_week_high, 0.95]"},
-    {"op": "below_pct", "value": "[field id, fraction]", "desc": "within fraction above a field"},
+    {"op": "above_pct", "value": "[field id, ratio]", "desc": "close >= field * ratio, e.g. close above_pct [price_52_week_high, 0.95] is within 5% of the high"},
+    {"op": "below_pct", "value": "[field id, ratio]", "desc": "close <= field * ratio, e.g. close below_pct [price_52_week_low, 1.05] is within 5% of the low"},
     {"op": "crosses", "value": "number or field id", "desc": "crossed in either direction this bar"},
     {"op": "crosses_above", "value": "number or field id", "desc": "crossed up through (golden-cross style)"},
     {"op": "crosses_below", "value": "number or field id", "desc": "crossed down through (death-cross style)"},
@@ -271,12 +277,19 @@ def _shape(resp: dict, table_rows: int = 50) -> dict:
         _STATS["errors"] += 1
         return {
             "error": meta["error"],
+            "error_code": meta.get("error_code"),
+            "detail": meta.get("detail"),
             "market": meta.get("market"),
             "count": 0,
             "rows": [],
         }
     rows, columns = resp["rows"], resp["columns"]
+    extra: dict = {}
+    if meta.get("warnings"):
+        extra["warnings"] = meta["warnings"]
     return {
+        **extra,
+        "mode": meta.get("mode", "delayed"),
         "count": resp["count"],
         "returned": len(rows),
         "market": meta.get("market"),
@@ -290,14 +303,14 @@ def _shape(resp: dict, table_rows: int = 50) -> dict:
 def _run(req: ScreenRequest, table_rows: int = 50) -> dict:
     """Run a screen through the cache and shape it for the model."""
     _STATS["calls"] += 1
-    key = make_key(req.model_dump())
-    cached = _cache.get(key)
+    cached = _cache.get(request_key(req))
     if cached is not None:
         _STATS["cache_hits"] += 1
         return _shape(cached, table_rows)
     resp = run_screen(req)
     if resp["meta"].get("error") is None:
-        _cache.set(key, resp)
+        # Re-derive the key: a rejected cookie mid-run changes the mode.
+        _cache.set(request_key(req), resp)
     return _shape(resp, table_rows)
 
 
@@ -315,7 +328,7 @@ def list_markets() -> list[dict]:
 
 
 @mcp.tool
-def search_fields(query: str = "", group: str = "", limit: int = 40) -> dict:
+def search_fields(query: str = "", group: str = "", limit: Limit = 40) -> dict:
     """Search the TradingView field universe (1000+ fields) by id, label, or group.
 
     This is how you discover what you can filter, sort, and select on. The
@@ -406,8 +419,8 @@ def screen(
     computed: list[dict] | None = None,
     stats: list[dict] | None = None,
     factor: list[dict] | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: Limit = 50,
+    offset: Offset = 0,
 ) -> dict:
     """Run a live market screen and return the matching rows.
 
@@ -460,7 +473,7 @@ def screen(
 
 
 @mcp.tool
-def run_preset(preset_id: str, limit: int = 50, include_otc: bool = False) -> dict:
+def run_preset(preset_id: str, limit: Limit = 50, include_otc: bool = False) -> dict:
     """Run a named preset scan (see list_presets) and return its rows.
 
     The preset supplies the market, filters, columns, and sort. `limit` caps
@@ -543,7 +556,7 @@ def run_factor_preset(
     market: str = "america",
     filters: list[dict] | None = None,
     columns: list[str] | None = None,
-    limit: int = 50,
+    limit: Limit = 50,
     include_otc: bool = False,
 ) -> dict:
     """Rank a market by a named composite factor (see list_factor_presets).
@@ -628,7 +641,7 @@ def server_stats() -> dict:
 # Symbol intelligence: search, compare, rate, and read a chart
 # ----------------------------------------------------------------------------
 @mcp.tool
-def search_symbols(query: str, market: str = "america", limit: int = 20) -> dict:
+def search_symbols(query: str, market: str = "america", limit: Limit = 20) -> dict:
     """Find symbols by ticker or company name (substring, case-insensitive).
 
     Resolves "apple" or "nvda" to real rows so you can hand a ticker to the
@@ -671,14 +684,24 @@ def compare(tickers: list[str], columns: list[str] | None = None, market: str = 
         "name", "close", "change", "Perf.1M", "Perf.YTD", "RSI",
         "market_cap_basic", "price_earnings_ttm", "Recommend.All",
     ]
-    cols = [c for c in cols if validate_field(c)]
+    bad = [c for c in cols if not validate_field(c)]
+    if bad:
+        return {"error": "Unknown column: " + ", ".join(f"'{c}'" for c in bad[:5]) + "."}
+    syms = list(dict.fromkeys(syms))
+    if len(syms) > MAX_LIMIT:
+        return {"error": f"Compare at most {MAX_LIMIT} tickers."}
     req = ScreenRequest(
         market=market,
         filters=[Filter(field="name", op="isin", value=syms)],
         columns=cols,
         limit=max(len(syms), 1),
     )
-    return _run(req, table_rows=len(syms))
+    out = _run(req, table_rows=len(syms))
+    if out.get("error"):
+        return out
+    found = {str(r.get("name", "")).upper() for r in out.get("rows", [])}
+    out["not_found"] = [t for t in syms if t not in found]
+    return out
 
 
 @mcp.tool
@@ -691,12 +714,20 @@ def technical_rating(ticker: str, market: str = "america", timeframes: list[str]
     timeframes: any of "1m","5m","15m","1h","4h","1d","1w","1mo" (default "1d").
     """
     tfs = timeframes or ["1d"]
+    unknown = [t for t in tfs if str(t).strip().lower() not in _INTERVALS]
+    if unknown:
+        return {
+            "error": "Unknown timeframe: " + ", ".join(f"'{t}'" for t in unknown) + ".",
+            "valid_timeframes": ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1w", "1mo"],
+        }
     base = ["Recommend.All", "Recommend.MA", "Recommend.Other"]
     # Build the suffixed column set. Daily uses the bare field; others get |code.
     wanted = ["name", "description", "close", "change"]
     tf_cols: dict[str, dict] = {}
     for tf in tfs:
         code = normalize_interval(tf)
+        # The scanner spells weekly and monthly |1W and |1M, unlike chart URLs.
+        code = {"W": "1W", "M": "1M"}.get(code, code)
         suffix = "" if code == "D" else f"|{code}"
         tf_cols[tf] = {b: f"{b}{suffix}" for b in base}
         wanted += list(tf_cols[tf].values())
@@ -978,7 +1009,7 @@ def chart(ticker: str, market: str = "america", interval: str = "1d", theme: str
 def sector_breakdown(
     market: str = "america",
     filters: list[dict] | None = None,
-    limit: int = 500,
+    limit: Limit = 500,
     include_otc: bool = False,
 ) -> dict:
     """Aggregate a screen by sector: count, average change, and total market cap.
@@ -1091,7 +1122,7 @@ def _compute_breadth(rows: list[dict]) -> dict:
 def market_breadth(
     market: str = "america",
     filters: list[dict] | None = None,
-    limit: int = 500,
+    limit: Limit = 500,
     include_otc: bool = False,
 ) -> dict:
     """Market breadth indicators: advancers/decliners, % above key MAs, RSI distribution.
@@ -1117,7 +1148,7 @@ def market_breadth(
         market=market,
         filters=[Filter(**f) for f in guarded],
         columns=["name", "close", "change", "RSI", "SMA50", "SMA200"],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
@@ -1213,7 +1244,7 @@ def _compute_sector_rotation(rows: list[dict]) -> list[dict]:
 def sector_rotation(
     market: str = "america",
     filters: list[dict] | None = None,
-    limit: int = 1000,
+    limit: Limit = 1000,
     include_otc: bool = False,
 ) -> dict:
     """Rank sectors by multi-timeframe momentum: a sector rotation dashboard.
@@ -1244,7 +1275,7 @@ def sector_rotation(
         market=market,
         filters=[Filter(**f) for f in guarded],
         columns=["name", "sector", "change", "Perf.1M", "Perf.YTD", "RSI", "market_cap_basic"],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
@@ -1329,7 +1360,7 @@ def new_highs_lows(
     market: str = "america",
     filters: list[dict] | None = None,
     threshold: float = 0.02,
-    limit: int = 500,
+    limit: Limit = 500,
     include_otc: bool = False,
 ) -> dict:
     """Stocks at or near their 52-week highs and lows: a classic breadth gauge.
@@ -1357,7 +1388,7 @@ def new_highs_lows(
         market=market,
         filters=[Filter(**f) for f in guarded],
         columns=["name", "close", "change", "price_52_week_high", "price_52_week_low", "sector"],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
@@ -1460,7 +1491,7 @@ def volume_leaders(
     market: str = "america",
     min_rvol: float = 1.5,
     filters: list[dict] | None = None,
-    limit: int = 500,
+    limit: Limit = 500,
     top: int = 50,
     include_otc: bool = False,
 ) -> dict:
@@ -1476,7 +1507,7 @@ def volume_leaders(
     min_rvol: minimum relative-volume multiple (default 1.5 = 50% above normal).
               Use 2.0 for clear surges, 3.0 for extreme spikes.
     filters:  optional extra filters (e.g. a market-cap floor).
-    limit:    rows to sample (default 500). Raise to 2000 for broader coverage.
+    limit:    rows to sample (default 500). Raise to 1000 for broader coverage.
     top:      max leaders to return (default 50).
     include_otc: scan OTC too (default False).
 
@@ -1489,7 +1520,7 @@ def volume_leaders(
         market=market,
         filters=[Filter(**f) for f in guarded],
         columns=["name", "close", "change", "volume", "relative_volume_10d_calc", "sector"],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
@@ -1654,7 +1685,7 @@ def momentum_consistency(
     direction: str = "bull",
     min_aligned: int = 0,
     filters: list[dict] | None = None,
-    limit: int = 500,
+    limit: Limit = 500,
     top: int = 50,
     include_otc: bool = False,
 ) -> dict:
@@ -1692,7 +1723,7 @@ def momentum_consistency(
             "name", "close", "change", "sector", "market_cap_basic",
             "Perf.W", "Perf.1M", "Perf.3M", "Perf.YTD",
         ],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
@@ -1825,7 +1856,7 @@ def _compute_relative_strength(rows: list[dict]) -> list[dict]:
 def relative_strength_leaders(
     market: str = "america",
     filters: list[dict] | None = None,
-    limit: int = 500,
+    limit: Limit = 500,
     top: int = 50,
     include_otc: bool = False,
 ) -> dict:
@@ -1865,7 +1896,7 @@ def relative_strength_leaders(
             "name", "close", "change", "sector", "market_cap_basic",
             "Perf.1M", "Perf.YTD",
         ],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
@@ -1972,7 +2003,7 @@ def ema_stack_scan(
     market: str = "america",
     min_stack: int = 0,
     filters: list[dict] | None = None,
-    limit: int = 500,
+    limit: Limit = 500,
     top: int = 50,
     include_otc: bool = False,
 ) -> dict:
@@ -2018,7 +2049,7 @@ def ema_stack_scan(
             "name", "close", "change", "sector", "market_cap_basic",
             "RSI", "EMA8", "EMA21", "SMA50", "SMA200",
         ],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
@@ -2195,7 +2226,7 @@ def earnings_radar(
     market: str = "america",
     horizon: int = 7,
     filters: list[dict] | None = None,
-    limit: int = 1000,
+    limit: Limit = 1000,
     top: int = 50,
     include_otc: bool = False,
 ) -> dict:
@@ -2216,7 +2247,7 @@ def earnings_radar(
              today-only, 14 for a two-week forward radar.
     filters: optional extra filters (e.g. market_cap_basic > 1e9 to skip micro-
              caps, or RSI < 40 for oversold pre-earnings ideas).
-    limit:   rows to pull from the market (default 1000). Raise to 2000 if you
+    limit:   rows to pull from the market (default 1000). Raise to 1000 if you
              want broader small-cap coverage.
     top:     max stocks to return in the stocks list (default 50).
 
@@ -2226,6 +2257,9 @@ def earnings_radar(
     stocks:[{name,close,change,sector,market_cap_basic,days_to_earnings,
     bucket,rsi,atrp,perf_1m}]}.
     """
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= 365:
+        return {"error": "horizon must be a whole number of days between 1 and 365.",
+                "error_code": "invalid_request"}
     guarded, guard = _otc_guard(market, filters, include_otc)
     base_filters = [Filter(**f) for f in guarded]
     # Window on earnings_release_next_date, not days_to_earnings: the latter
@@ -2248,7 +2282,7 @@ def earnings_radar(
             "earnings_release_next_date", "RSI", "ATRP", "Perf.1M",
         ],
         sort=[SortKey(field="earnings_release_next_date", dir="asc")],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
@@ -2379,7 +2413,7 @@ def gap_scanner(
     market: str = "america",
     min_gap_pct: float = 1.0,
     filters: list[dict] | None = None,
-    limit: int = 500,
+    limit: Limit = 500,
     top: int = 50,
     include_otc: bool = False,
 ) -> dict:
@@ -2427,7 +2461,7 @@ def gap_scanner(
         "name", "close", "open", "change", "sector",
         "gap", "volume", "relative_volume_10d_calc",
     ]
-    half = max(1, min(limit, 2000) // 2)
+    half = max(1, min(limit, MAX_LIMIT) // 2)
 
     rows: list[dict] = []
     seen: set = set()
@@ -2627,7 +2661,7 @@ def dividend_screen(
     min_yield: float = 1.0,
     min_years_growing: int = 0,
     filters: list[dict] | None = None,
-    limit: int = 500,
+    limit: Limit = 500,
     top: int = 50,
     include_otc: bool = False,
 ) -> dict:
@@ -2682,7 +2716,7 @@ def dividend_screen(
             "return_on_equity", "Perf.1M",
         ],
         sort=[SortKey(field="dividends_yield_current", dir="desc")],
-        limit=max(1, min(limit, 2000)),
+        limit=max(1, min(limit, MAX_LIMIT)),
     )
     resp = run_screen(req)
     if resp["meta"].get("error"):
