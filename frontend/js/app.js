@@ -44,6 +44,7 @@ import store from './state.js';
 import api, { formatLatency } from './api.js';
 import * as format from './format.js';
 import { TableView } from './table.js';
+import { renderModeBadge } from './mode.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -289,6 +290,9 @@ async function boot() {
   }
 
   buildTopbarControls();
+
+  // Data-mode badge; never blocks boot. No `mode` field means delayed.
+  api.getHealth().then((h) => renderModeBadge(h && h.mode), () => renderModeBadge('delayed'));
 
   // Initial america screen.
   await store.runScreen();

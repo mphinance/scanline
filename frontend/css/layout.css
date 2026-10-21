@@ -491,3 +491,19 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="
   text-align: left;
 }
 .summary-toggle:hover { color: var(--cyan); }
+
+/* ---- Footer data-mode badge ---- */
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.mode-badge:hover { color: var(--text); border-color: rgba(0, 240, 255, 0.4); }
+.mode-badge.mode-realtime { color: var(--green); border-color: rgba(0, 255, 136, 0.5); }
+.mode-badge.mode-rejected { color: var(--pink); border-color: rgba(255, 0, 110, 0.55); }
