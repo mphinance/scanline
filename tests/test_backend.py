@@ -10,9 +10,9 @@ import math
 
 import pytest
 
-from backend import analytics
-from backend.fields import FIELDS, field_index, validate_field
-from backend.presets import FACTOR_PRESETS, OTC_GUARDED, PRESETS
+from scanline import analytics
+from scanline.fields import FIELDS, field_index, validate_field
+from scanline.presets import FACTOR_PRESETS, OTC_GUARDED, PRESETS
 
 
 # --- catalog -------------------------------------------------------------
@@ -121,7 +121,7 @@ def test_every_unprotected_america_preset_is_guarded():
 
 def test_otc_guard_is_idempotent():
     # Import order must never double-append the exclusion.
-    from backend import presets as presets_mod
+    from scanline import presets as presets_mod
 
     before = [len(p["filters"]) for p in PRESETS]
     presets_mod._apply_otc_guard()
@@ -138,8 +138,8 @@ def test_preset_filter_fields_are_populated_in_their_own_market():
     rows out of 39,812 while reporting success and no error. Catalog validity is
     global; field availability is per market, and only a live call can tell.
     """
-    from backend.models import ScreenRequest
-    from backend.pipeline import run_screen
+    from scanline.models import ScreenRequest
+    from scanline.pipeline import run_screen
 
     wanted: dict[str, set[str]] = {}
     for p in PRESETS:
@@ -188,9 +188,9 @@ def test_displayed_and_scored_fields_are_populated_in_their_own_market():
     factor out of the model, which is worse, because the ranking still looks
     like a ranking.
     """
-    from backend.fields import DEFAULT_COLUMNS, MARKET_FIELDS
-    from backend.models import ScreenRequest
-    from backend.pipeline import run_screen
+    from scanline.fields import DEFAULT_COLUMNS, MARKET_FIELDS
+    from scanline.models import ScreenRequest
+    from scanline.pipeline import run_screen
 
     wanted: dict[str, set[str]] = {}
     for market, cols in DEFAULT_COLUMNS.items():
@@ -513,8 +513,8 @@ def test_query_columns_excludes_stat_sort_fields():
     # Sorting by a stat virtual column (winsor/decile/zscore/etc.) must NOT
     # add that virtual name to the query column set. Before the fix, winsor(
     # and decile( were missing from the guard and would leak into the query.
-    from backend.models import ScreenRequest, Stat, SortKey
-    from backend.pipeline import _query_columns
+    from scanline.models import ScreenRequest, Stat, SortKey
+    from scanline.pipeline import _query_columns
 
     req = ScreenRequest(
         market="america",
@@ -546,14 +546,14 @@ def test_query_columns_excludes_stat_sort_fields():
 # answering the whole network.
 
 def test_cli_host_defaults_to_loopback(monkeypatch):
-    from backend.cli import DEFAULT_HOST, parse_args
+    from scanline.cli import DEFAULT_HOST, parse_args
 
     monkeypatch.delenv("SCANLINE_HOST", raising=False)
     assert parse_args([]).host == DEFAULT_HOST
 
 
 def test_cli_empty_env_host_does_not_bind_all_interfaces(monkeypatch):
-    from backend.cli import DEFAULT_HOST, parse_args
+    from scanline.cli import DEFAULT_HOST, parse_args
 
     # Set but empty, which is what a compose `SCANLINE_HOST=` entry or a bare
     # line in a .env produces. os.environ.get(name, default) returns "" here,
@@ -566,7 +566,7 @@ def test_cli_empty_env_host_does_not_bind_all_interfaces(monkeypatch):
 
 
 def test_cli_empty_host_flag_does_not_bind_all_interfaces(monkeypatch):
-    from backend.cli import DEFAULT_HOST, parse_args
+    from scanline.cli import DEFAULT_HOST, parse_args
 
     monkeypatch.delenv("SCANLINE_HOST", raising=False)
     assert parse_args(["--host", ""]).host == DEFAULT_HOST
@@ -574,7 +574,7 @@ def test_cli_empty_host_flag_does_not_bind_all_interfaces(monkeypatch):
 
 
 def test_cli_host_precedence_flag_over_env(monkeypatch):
-    from backend.cli import parse_args
+    from scanline.cli import parse_args
 
     monkeypatch.setenv("SCANLINE_HOST", "10.0.0.1")
     assert parse_args([]).host == "10.0.0.1"
@@ -585,7 +585,7 @@ def test_cli_host_precedence_flag_over_env(monkeypatch):
 
 
 def test_cli_port_precedence_and_junk(monkeypatch):
-    from backend.cli import DEFAULT_PORT, parse_args
+    from scanline.cli import DEFAULT_PORT, parse_args
 
     monkeypatch.delenv("SCANLINE_PORT", raising=False)
     assert parse_args([]).port == DEFAULT_PORT
@@ -603,7 +603,7 @@ def test_cli_port_precedence_and_junk(monkeypatch):
 
 @pytest.mark.live
 def test_run_query_live():
-    from backend.screener import run_query
+    from scanline.screener import run_query
 
     res = run_query(
         market="america",
@@ -622,14 +622,14 @@ def test_every_preset_builds_its_filters():
     # Building the conditions is offline and exercises the operator mapping for
     # real. above_pct/below_pct once took the wrong arity and three presets
     # returned nothing while the suite stayed green.
-    from backend.screener import _build_conditions
+    from scanline.screener import _build_conditions
 
     for p in PRESETS:
         _build_conditions(p.get("filters", []))
 
 
 def test_above_below_pct_build():
-    from backend.screener import _build_conditions
+    from scanline.screener import _build_conditions
 
     _build_conditions([{"field": "close", "op": "above_pct", "value": ["SMA50", 1.05]}])
     _build_conditions([{"field": "close", "op": "below_pct", "value": ["SMA50", 0.95]}])

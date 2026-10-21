@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "scanline"
+name = "scanline-screener"
 version = "1.0.0"
 description = "A live market screener with a quant analytics layer and an MCP server, built on TradingView data."
 readme = "README.md"
@@ -40,14 +40,15 @@ Source = "https://github.com/mphinance/scanline"
 [project.scripts]
 # The two things a user runs. Both work from a checkout via run.py and
 # run_mcp.py as well, so the documented commands in CLAUDE.md keep working.
-scanline = "backend.cli:main"
-scanline-mcp = "backend.mcp_server:main"
+scanline = "scanline.cli:main"
+scanline-mcp = "scanline.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["backend"]
+packages = ["scanline"]
+exclude = ["*.test.mjs"]
 
-# The frontend is static assets that live outside the Python package, so an
-# installed wheel has to carry them somewhere importable. backend/app.py looks
+# The frontend is static assets that live outside the Python package, so the
+# wheel carries them inside it as scanline/static. scanline/app.py looks
 # for this location when the sibling frontend/ folder of a checkout is absent.
 [tool.hatch.build.targets.wheel.force-include]
-"frontend" = "scanline_frontend"
+"frontend" = "scanline/static"

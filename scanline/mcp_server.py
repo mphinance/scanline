@@ -1,6 +1,6 @@
 """SCANLINE as an MCP server.
 
-Exposes the exact same screen engine the web app uses (backend/pipeline.py)
+Exposes the exact same screen engine the web app uses (scanline/pipeline.py)
 over the Model Context Protocol, so any MCP client (Claude Desktop, Claude
 Code, etc.) can drive the screener directly: filter, score, rank, and discover
 fields across stocks, crypto, forex, futures, bonds, and CFDs.
@@ -53,7 +53,7 @@ mcp = FastMCP("scanline")
 _cache = TTLCache(ttl_seconds=20)
 _STATS = {"calls": 0, "cache_hits": 0, "errors": 0, "started": time.time()}
 
-# Operator reference, kept in lockstep with backend/screener._apply_op. The
+# Operator reference, kept in lockstep with scanline/screener._apply_op. The
 # `value` column notes when a value may be another field id (cross-field).
 OPERATORS: list[dict] = [
     {"op": ">", "value": "number or field id", "desc": "greater than"},
@@ -2802,7 +2802,7 @@ def main() -> None:
     i = args.index("--http")
     port = int(args[i + 1]) if i + 1 < len(args) else 8765
 
-    # Same precedence the web app uses (see backend/cli.py): flag, then
+    # Same precedence the web app uses (see scanline/cli.py): flag, then
     # environment, then loopback. Without an explicit host fastmcp binds
     # 127.0.0.1, which is invisible from outside a container no matter what
     # port you publish, so the Docker image's SCANLINE_HOST has to reach here.

@@ -1,7 +1,7 @@
 """One-click preset scans and factor-scoring presets.
 
-PRESETS use real field ids and the op strings backend/screener.py understands.
-FACTOR_PRESETS feed backend/analytics.apply_factor.
+PRESETS use real field ids and the op strings scanline/screener.py understands.
+FACTOR_PRESETS feed scanline/analytics.apply_factor.
 """
 
 from __future__ import annotations

@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> None:
         ]
 
     uvicorn.run(
-        "backend.app:app",
+        "scanline.app:app",
         host=args.host,
         port=args.port,
         reload=args.reload,

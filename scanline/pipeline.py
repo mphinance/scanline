@@ -1,8 +1,8 @@
 """The shared screen pipeline.
 
 One pure function, run_screen, that takes a ScreenRequest and returns the
-shaped response dict. Both the HTTP API (backend/app.py) and the MCP server
-(backend/mcp_server.py) call this so a screen behaves identically no matter
+shaped response dict. Both the HTTP API (scanline/app.py) and the MCP server
+(scanline/mcp_server.py) call this so a screen behaves identically no matter
 who drives it. Caching lives in the callers, not here.
 """
 
