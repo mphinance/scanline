@@ -111,6 +111,23 @@ const STAT_LABELS = {
   max: 'MAX', stdev: 'STDEV', sum: 'SUM',
 };
 
+// Column stats are collapsed on first run; the choice persists per browser.
+const STATS_OPEN_KEY = 'scanline.statsOpen';
+function loadStatsOpen() {
+  try {
+    return localStorage.getItem(STATS_OPEN_KEY) === '1';
+  } catch (err) {
+    return false;
+  }
+}
+function saveStatsOpen(open) {
+  try {
+    localStorage.setItem(STATS_OPEN_KEY, open ? '1' : '0');
+  } catch (err) {
+    // Not fatal.
+  }
+}
+
 // One-shot render: convenience wrapper that draws a fresh stateless view.
 export function renderTable(container, result, fieldsIndex) {
   const view = new TableView(container, fieldsIndex);
@@ -124,13 +141,21 @@ function emptyCard(result) {
   const err = result && result.meta && result.meta.error;
   const title = document.createElement('div');
   title.className = 'empty-title';
-  title.textContent = err ? 'QUERY ERROR' : 'NO MATCHES';
+  title.textContent = err ? 'SCAN FAILED' : 'NO MATCHES';
   const body = document.createElement('div');
   body.textContent = err
     ? String(err)
     : 'No rows came back for this scan. Loosen the filters or pick another market.';
   wrap.appendChild(title);
   wrap.appendChild(body);
+  if (err) {
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn btn-primary';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => document.dispatchEvent(new CustomEvent('screener:retry')));
+    wrap.appendChild(retry);
+  }
   return wrap;
 }
 
@@ -639,8 +664,18 @@ export class TableView {
         tr.appendChild(td);
       }
       // PRESERVED: row click -> global event for the detail drawer module.
-      tr.addEventListener('click', () => {
+      const open = () => {
         document.dispatchEvent(new CustomEvent('screener:rowclick', { detail: row }));
+      };
+      tr.tabIndex = 0;
+      tr.setAttribute('role', 'row');
+      tr.addEventListener('click', open);
+      tr.addEventListener('keydown', (e) => {
+        if (e.target !== tr) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          open();
+        }
       });
       tbody.appendChild(tr);
     });
@@ -673,10 +708,22 @@ export class TableView {
     // Selector: choose all rows or a single stat row.
     const head = document.createElement('div');
     head.className = 'summary-head';
-    const label = document.createElement('span');
-    label.className = 'summary-eyebrow';
-    label.textContent = 'COLUMN STATS · visible rows';
+    const open = loadStatsOpen();
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'summary-eyebrow summary-toggle';
+    label.setAttribute('aria-expanded', String(open));
+    label.textContent = (open ? '\u25BE' : '\u25B8') + ' COLUMN STATS \u00B7 visible rows';
+    label.addEventListener('click', () => {
+      saveStatsOpen(!open);
+      this._renderFooter(rows, columns);
+    });
     head.appendChild(label);
+    if (!open) {
+      wrap.appendChild(head);
+      host.appendChild(wrap);
+      return;
+    }
 
     const sel = document.createElement('select');
     sel.className = 'summary-select';

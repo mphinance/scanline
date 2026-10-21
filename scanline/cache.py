@@ -20,10 +20,12 @@ def make_key(payload: Any) -> str:
 
 
 class TTLCache:
-    """A small dict cache where entries expire after ttl_seconds."""
+    """A small dict cache where entries expire after ttl_seconds and the
+    number of entries is capped (oldest evicted first)."""
 
-    def __init__(self, ttl_seconds: int = 20) -> None:
+    def __init__(self, ttl_seconds: int = 20, max_entries: int = 256) -> None:
         self.ttl = ttl_seconds
+        self.max_entries = max_entries
         self._store: dict[str, tuple[float, Any]] = {}
         self._lock = threading.Lock()
 
@@ -41,10 +43,21 @@ class TTLCache:
             return value
 
     def set(self, key: str, value: Any) -> None:
-        """Store a value with the configured TTL."""
-        expires_at = time.time() + self.ttl
+        """Store a value with the configured TTL, sweeping expired entries and
+        evicting the oldest when the cap would be exceeded."""
+        now = time.time()
+        expires_at = now + self.ttl
         with self._lock:
+            for k in [k for k, (exp, _v) in self._store.items() if now >= exp]:
+                del self._store[k]
+            self._store.pop(key, None)
+            while len(self._store) >= self.max_entries:
+                self._store.pop(next(iter(self._store)))
             self._store[key] = (expires_at, value)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._store)
 
     def clear(self) -> None:
         """Drop all entries."""

@@ -1,7 +1,7 @@
 """One-click preset scans and factor-scoring presets.
 
-PRESETS use real field ids and the op strings backend/screener.py understands.
-FACTOR_PRESETS feed backend/analytics.apply_factor.
+PRESETS use real field ids and the op strings scanline/screener.py understands.
+FACTOR_PRESETS feed scanline/analytics.apply_factor.
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ PRESETS: list[dict] = [
         "market": "america",
         "columns": _CORE + ["price_52_week_low", "Perf.Y"],
         "filters": [
-            {"field": "close", "op": "below_pct", "value": ["price_52_week_low", 0.02]},
+            {"field": "close", "op": "below_pct", "value": ["price_52_week_low", 1.02]},
             {"field": "market_cap_basic", "op": ">", "value": 3e8},
         ],
         "match": "all",
@@ -180,15 +180,15 @@ PRESETS: list[dict] = [
         # dividend PER SHARE growth, which is populated (161 of 200 sampled) and is
         # closer to what "aristocrat" means anyway: a rising dividend, not merely a
         # sustainable one.
-        "columns": _FUND + ["dividend_yield_recent",
+        "columns": _FUND + ["dividends_yield_current",
                             "dps_common_stock_prim_issue_yoy_growth_fy"],
         "filters": [
-            {"field": "dividend_yield_recent", "op": ">", "value": 3},
+            {"field": "dividends_yield_current", "op": ">", "value": 3},
             {"field": "dps_common_stock_prim_issue_yoy_growth_fy", "op": ">", "value": 0},
             {"field": "market_cap_basic", "op": ">", "value": 2e9},
         ],
         "match": "all",
-        "sort": [{"field": "dividend_yield_recent", "dir": "desc"}],
+        "sort": [{"field": "dividends_yield_current", "dir": "desc"}],
     },
     {
         "id": "mega_cap_movers",
@@ -682,7 +682,7 @@ FACTOR_PRESETS: list[dict] = [
             {"field": "price_earnings_ttm", "weight": 1.0, "dir": "low"},
             {"field": "price_book_fq", "weight": 1.0, "dir": "low"},
             {"field": "price_sales_current", "weight": 0.5, "dir": "low"},
-            {"field": "dividend_yield_recent", "weight": 0.5, "dir": "high"},
+            {"field": "dividends_yield_current", "weight": 0.5, "dir": "high"},
         ],
     },
     {

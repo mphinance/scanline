@@ -296,28 +296,34 @@ timeframes mixed (1w/1m bull, 1h/4h/1d bear).
   <div class="wrap">
     <div class="section-head">
       <div class="eyebrow">Run it yourself</div>
-      <h2>Three ways in</h2>
-      <p>The screener runs on your own machine. There is no hosted version and there is not going to be one: a screen should come from the person reading it, at human scale, the same way your browser talks to TradingView when you open the site. No account, no API key, nothing to sign up for.</p>
+      <h2>Four ways in</h2>
+      <p>The screener runs on your own machine. There is no hosted version and there is not going to be one: TradingView data is fetched from your own IP, so it cannot live on a cloud box. No account, no API key, nothing to sign up for.</p>
     </div>
     <div class="mcp">
       <div class="codeblock">
-<pre><span class="c-com"># 1. Docker, nothing else installed</span>
+<pre><span class="c-com"># 1. Zero install</span>
+uvx scanline-screener
+
+<span class="c-com"># 2. Installed once</span>
+pipx install scanline-screener
+scanline           <span class="c-com"># the web app</span>
+scanline-mcp       <span class="c-com"># the MCP server</span>
+
+<span class="c-com"># 3. Docker</span>
+docker run --rm -p 127.0.0.1:8000:8000 ghcr.io/mphinance/scanline
+
+<span class="c-com"># 4. From source</span>
 git clone https://github.com/mphinance/scanline
 cd scanline
-docker compose up
-
-<span class="c-com"># 2. From a checkout</span>
 pip install -r requirements.txt
 python run.py
 
-<span class="c-com"># 3. As a command, from anywhere</span>
-pip install git+https://github.com/mphinance/scanline
-scanline           <span class="c-com"># the web app</span>
-scanline-mcp       <span class="c-com"># the MCP server</span>
+<span class="c-com"># MCP for Claude Code</span>
+claude mcp add scanline -- uvx --from scanline-screener scanline-mcp
 </pre>
       </div>
       <div>
-        <p style="color:var(--muted);margin-top:0">All three serve the same thing at <span class="mono">127.0.0.1:8000</span>: the full screener, the analytics layer, and the HTTP API. Loopback only unless you say otherwise.</p>
+        <p style="color:var(--muted);margin-top:0">All four serve the same thing at <span class="mono">127.0.0.1:8000</span>: the full screener, the analytics layer, and the HTTP API. Loopback only unless you say otherwise.</p>
         <div class="toollist">
           <span class="pill"><b>MIT</b> licensed</span>
           <span class="pill"><b>no build step</b> on the frontend</span>

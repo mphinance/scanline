@@ -131,7 +131,7 @@ _PROFITABILITY = [
 ]
 
 _DIVIDENDS = [
-    _f("dividend_yield_recent", "Dividend Yield %", "Dividends", "pct", "%"),
+    _f("dividends_yield_current", "Dividend Yield %", "Dividends", "pct", "%"),
     _f("dividends_yield", "Div Yield (TTM) %", "Dividends", "pct", "%"),
     _f("dps_common_stock_prim_issue_fy", "DPS FY", "Dividends", "num", "$"),
     _f("dividends_per_share_fq", "DPS FQ", "Dividends", "num", "$"),
@@ -289,7 +289,7 @@ _CURATED: list[dict] = (
 )
 
 # The complete field universe, generated from TradingView's live metainfo by
-# backend/gen_fields.py (committed as fields_all.json, no runtime network call).
+# scanline/gen_fields.py (committed as fields_all.json, no runtime network call).
 # Curated entries win on id, so common fields keep their friendly labels and the
 # remaining ~850 base fields are still searchable in the column picker.
 import json as _json
@@ -335,6 +335,14 @@ def validate_field(field_id: str) -> bool:
         base, _, suffix = field_id.partition("|")
         return base in field_index and suffix in TIMEFRAME_SUFFIXES
     return False
+
+
+def field_type(field_id: str) -> str | None:
+    """Catalog type of a field (num, pct, price, int, str, bignum), or None when
+    the id is unknown. A timeframe suffix is stripped first."""
+    base = field_id.partition("|")[0] if "|" in field_id else field_id
+    entry = field_index.get(base)
+    return entry["type"] if entry else None
 
 
 # Sensible default columns per market kind. Stocks get fundamentals,

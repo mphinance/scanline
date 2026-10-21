@@ -521,9 +521,29 @@ underneath it.
   `test_a_trivially_true_filter_does_not_change_the_universe`. Suite: 157 offline, 37 live,
   194 total.
 
+- **2026-09-20** `dividend_yield_recent` went dead on TradingView's side. It stayed in the
+  catalog (still a valid field id) but returned null for every america row, which is exactly
+  the per-market dead-field failure mode `docs/MCP.md`'s live suite exists to catch, and it
+  had been catching it: the `Live data` scheduled workflow failed every run from 2026-09-11
+  onward. Verified live: 0 of 20 sampled rows populated for `dividend_yield_recent`, versus 20
+  of 20 for `dividends_yield_current`. Renamed every reference (the Dividends field catalog
+  entry, the `dividend_aristocrats` preset and its filter and sort, the `value` factor's yield
+  weight, and the `dividend_screen` MCP tool's filter, column and sort) from
+  `dividend_yield_recent` to `dividends_yield_current`. Test fixtures updated to match. Suite
+  green: 162 offline, 199 total.
+
 ## Known notes
 - Crypto/forex/bond/cfd scans are huge (tens of thousands of rows). The default limit is 150; raise
   it in state if you want deeper pulls.
 - Headless screenshots use `docs/capture.py` (Playwright). The Claude-in-Chrome CDP capture path
   times out on this machine for backgrounded tabs, so the standalone capture is the supported route.
 - Real-time data needs TradingView cookies passed to `get_scanner_data`. Delayed data needs nothing.
+
+- **2026-10-21** Rename for release. `backend/` is now the `scanline/` package and
+  the distribution is `scanline-screener` (`scanline` on PyPI belongs to an
+  unrelated project). The frontend ships inside the wheel as `scanline/static`,
+  replacing the top-level `backend` and `scanline_frontend` names that would have
+  collided with other distributions. `scanline` and `scanline-mcp` commands are
+  unchanged. Verified: wheel builds, installs into an empty venv, serves `/` and
+  `/api/health`. Earlier entries above still say `backend/`; they are history.
+  Plan for the rest of the release: `docs/PLAN-v1.md`.

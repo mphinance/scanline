@@ -73,7 +73,7 @@ window.Screener.registerModule("panels", () => {
   hideBtn.type = "button";
   hideBtn.textContent = "«"; // left guillemet
   hideBtn.title = "Hide rail (\\)";
-  hideBtn.addEventListener("click", () => setHidden(true));
+  hideBtn.addEventListener("click", () => (isNarrow() ? setOpen(false) : setHidden(true)));
   tabs.appendChild(hideBtn);
 
   rail.insertBefore(tabs, rail.firstChild);
@@ -105,6 +105,39 @@ window.Screener.registerModule("panels", () => {
     saveState({ active: activeKey, hidden });
   }
 
+  // ---- Narrow viewports: the rail is an off-canvas drawer opened by a hamburger.
+  const narrowMq = window.matchMedia("(max-width: 899.98px)");
+  const toggleBtn = document.getElementById("rail-toggle");
+  const scrim = document.getElementById("rail-scrim");
+  function isNarrow() {
+    return narrowMq.matches;
+  }
+  function isOpen() {
+    return app.classList.contains("rail-open");
+  }
+  function setOpen(open) {
+    app.classList.toggle("rail-open", open);
+    if (toggleBtn) {
+      toggleBtn.setAttribute("aria-expanded", String(open));
+      toggleBtn.setAttribute("aria-label", open ? "Close tools panel" : "Open tools panel");
+    }
+    if (open) {
+      const t = tabByKey.get(activeKey);
+      if (t) t.focus({ preventScroll: true });
+    } else if (toggleBtn && rail.contains(document.activeElement)) {
+      toggleBtn.focus({ preventScroll: true });
+    }
+  }
+  if (toggleBtn) toggleBtn.addEventListener("click", () => setOpen(!isOpen()));
+  if (scrim) scrim.addEventListener("click", () => setOpen(false));
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isOpen() && isNarrow()) setOpen(false);
+  });
+  const onMq = () => {
+    if (!isNarrow()) setOpen(false);
+  };
+  if (narrowMq.addEventListener) narrowMq.addEventListener("change", onMq);
+
   // Backslash toggles the rail, except while typing in a field.
   window.addEventListener("keydown", (e) => {
     if (e.key !== "\\" || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -112,7 +145,8 @@ window.Screener.registerModule("panels", () => {
     const tag = el && el.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el && el.isContentEditable)) return;
     e.preventDefault();
-    setHidden(!isHidden());
+    if (isNarrow()) setOpen(!isOpen());
+    else setHidden(!isHidden());
   });
 
   // ---- Apply persisted state.
@@ -125,5 +159,6 @@ window.Screener.registerModule("panels", () => {
     const key = e.detail && e.detail.tab;
     if (key && tabByKey.has(key)) activate(key);
     setHidden(false);
+    if (isNarrow()) setOpen(true);
   });
 });
