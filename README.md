@@ -9,25 +9,66 @@ A live market screener for your own machine: TradingView's data, a quant analyti
 top, and an MCP server so an AI agent can drive the same engine. Stocks, crypto, forex, futures,
 bonds, and CFDs. No account, no API key, one command.
 
-```bash
-uvx scanline-screener
-```
-
-That starts the app on http://127.0.0.1:8000/ and opens it in your browser. The data is delayed
-and needs no key; see [docs/REALTIME.md](docs/REALTIME.md) for real-time.
+Download one file, double-click it, and the app opens in your browser. No Python, no pip, no
+Docker. The data is delayed and needs no key; see [docs/REALTIME.md](docs/REALTIME.md) for
+real-time.
 
 ## Install
 
-| Way | Command |
-|-----|---------|
-| uvx (nothing to install) | `uvx scanline-screener` |
-| pipx | `pipx install scanline-screener` then `scanline` |
-| Docker | `docker run --rm -p 127.0.0.1:8000:8000 ghcr.io/mphinance/scanline` |
-| From source | `git clone https://github.com/mphinance/scanline && cd scanline && pip install -r requirements.txt && python run.py` |
+### 1. Download for your OS (easiest)
 
-The package is `scanline-screener` on PyPI; the commands are `scanline` (web app, also
-available as `scanline-screener` so `uvx` finds it) and `scanline-mcp` (MCP server). `scanline --no-browser` skips opening a tab. If port 8000 is busy it
-tries the next ten and tells you which one it took.
+Grab the file for your system from the
+[Releases page](https://github.com/mphinance/scanline/releases/latest):
+
+| OS | File |
+|----|------|
+| Windows | `scanline-windows.exe` |
+| macOS | `scanline-macos` |
+| Linux | `scanline-linux` |
+
+Double-click it. A console window opens, prints the address (http://127.0.0.1:8000/) and your
+browser opens on it. Close the console window to stop the app. The first start takes a few
+seconds while the one-file bundle unpacks.
+
+These builds are not code-signed, so your OS will warn you once. That is expected:
+
+- **Windows:** SmartScreen says "Windows protected your PC". Click **More info**, then
+  **Run anyway**.
+- **macOS:** it says the file cannot be opened. Right-click (or Control-click) the file, choose
+  **Open**, then **Open** again in the dialog. If it will not run at all, open Terminal once
+  and run `chmod +x ~/Downloads/scanline-macos`.
+- **Linux:** `chmod +x scanline-linux`, then `./scanline-linux`.
+
+The same file also runs the MCP server for AI agents: `scanline-windows.exe mcp`.
+
+### 2. Docker
+
+```bash
+docker run --rm -p 127.0.0.1:8000:8000 ghcr.io/mphinance/scanline
+```
+
+### 3. pipx
+
+```bash
+pipx install git+https://github.com/mphinance/scanline
+scanline
+```
+
+### 4. From source
+
+```bash
+git clone https://github.com/mphinance/scanline
+cd scanline
+pip install -r requirements.txt
+python run.py
+```
+
+The commands are `scanline` (web app, also available as `scanline-screener`) and
+`scanline-mcp` (MCP server). `scanline --no-browser` skips opening a tab. If port 8000 is busy
+it tries the next ten and tells you which one it took.
+
+> **Once published to PyPI.** Not live yet. When the maintainer enables it, these also work:
+> `uvx scanline-screener` (nothing to install) and `pipx install scanline-screener`.
 
 **Why it runs on your machine.** TradingView data is fetched from your own IP, at human scale,
 the same way your browser talks to TradingView. That is why there is no hosted version and there
@@ -37,8 +78,10 @@ instead of the delayed feed, see [docs/REALTIME.md](docs/REALTIME.md).
 
 ### MCP, one line
 
+With the downloaded binary (use the full path to the file):
+
 ```bash
-claude mcp add scanline -- uvx --from scanline-screener scanline-mcp
+claude mcp add scanline -- /path/to/scanline-linux mcp
 ```
 
 Or in Claude Desktop's `claude_desktop_config.json`, or a project `.mcp.json`:
@@ -47,12 +90,15 @@ Or in Claude Desktop's `claude_desktop_config.json`, or a project `.mcp.json`:
 {
   "mcpServers": {
     "scanline": {
-      "command": "uvx",
-      "args": ["--from", "scanline-screener", "scanline-mcp"]
+      "command": "/path/to/scanline-linux",
+      "args": ["mcp"]
     }
   }
 }
 ```
+
+Once published to PyPI, `claude mcp add scanline -- uvx --from scanline-screener scanline-mcp`
+needs no download at all.
 
 The repo is two halves. The **app** (`scanline/` + `frontend/`) is the full screener. The
 **showcase** (`showcase/`) is a static, pure-TradingView demo, a widget gallery plus a live
@@ -175,8 +221,8 @@ python run_mcp.py --http 8765  # streamable-http for remote / multi-client
 
 ### Add it to your client
 
-The one-liner and JSON config above use `uvx`, so nothing needs installing first. If you
-installed with `pipx install scanline-screener`, the config is simply
+The one-liner and JSON config above use the downloaded binary. If you installed with
+`pipx install git+https://github.com/mphinance/scanline`, the config is simply
 `{"mcpServers": {"scanline": {"command": "scanline-mcp"}}}`.
 
 If you would rather point at a checkout, use absolute paths:
@@ -206,7 +252,7 @@ by my Value factor."* No TradingView account needed; data is live and delayed.
 
 ## Run it
 
-The install table at the top is the short version. A few more details.
+The install section at the top is the short version. A few more details.
 
 **Docker Compose** builds from a checkout and publishes on loopback only:
 
