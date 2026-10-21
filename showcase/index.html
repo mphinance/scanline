@@ -296,21 +296,24 @@ timeframes mixed (1w/1m bull, 1h/4h/1d bear).
   <div class="wrap">
     <div class="section-head">
       <div class="eyebrow">Run it yourself</div>
-      <h2>Four ways in</h2>
+      <h2>Four ways in, no terminal required for the first</h2>
       <p>The screener runs on your own machine. There is no hosted version and there is not going to be one: TradingView data is fetched from your own IP, so it cannot live on a cloud box. No account, no API key, nothing to sign up for.</p>
     </div>
     <div class="mcp">
       <div class="codeblock">
-<pre><span class="c-com"># 1. Zero install</span>
-uvx scanline-screener
+<pre><span class="c-com"># 1. Download (easiest): no Python, no pip, no Docker</span>
+Releases page, then double-click:
+  scanline-windows.exe  (SmartScreen: More info, Run anyway)
+  scanline-macos        (right-click, Open)
+  scanline-linux        (chmod +x, then run)
 
-<span class="c-com"># 2. Installed once</span>
-pipx install scanline-screener
+<span class="c-com"># 2. Docker</span>
+docker run --rm -p 127.0.0.1:8000:8000 ghcr.io/mphinance/scanline
+
+<span class="c-com"># 3. pipx</span>
+pipx install git+https://github.com/mphinance/scanline
 scanline           <span class="c-com"># the web app</span>
 scanline-mcp       <span class="c-com"># the MCP server</span>
-
-<span class="c-com"># 3. Docker</span>
-docker run --rm -p 127.0.0.1:8000:8000 ghcr.io/mphinance/scanline
 
 <span class="c-com"># 4. From source</span>
 git clone https://github.com/mphinance/scanline
@@ -318,8 +321,10 @@ cd scanline
 pip install -r requirements.txt
 python run.py
 
-<span class="c-com"># MCP for Claude Code</span>
-claude mcp add scanline -- uvx --from scanline-screener scanline-mcp
+<span class="c-com"># MCP for Claude Code (binary or pipx)</span>
+claude mcp add scanline -- /path/to/scanline-linux mcp
+
+<span class="c-com"># Once published to PyPI: uvx scanline-screener</span>
 </pre>
       </div>
       <div>

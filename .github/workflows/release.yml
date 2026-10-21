@@ -1,9 +1,11 @@
 name: Release
 
-# Tag `v*` to ship: build, test, publish to PyPI (trusted publishing, no token),
-# push a multi-arch image to GHCR, cut a GitHub Release. Run it by hand from the
-# Actions tab for a dry run: that builds and tests everything and publishes nothing.
-# One-time PyPI setup and the release checklist live in RELEASING.md.
+# Tag `v*` to ship: build, test, build one-file binaries (Windows, macOS, Linux),
+# push a multi-arch image to GHCR, cut a GitHub Release with the binaries attached.
+# PyPI is optional: it only publishes when the repo variable PUBLISH_PYPI is "true".
+# Run it by hand from the Actions tab for a dry run: that builds and tests everything
+# (binaries included) and publishes nothing.
+# PyPI setup and the release checklist live in RELEASING.md.
 
 on:
   push:
@@ -53,7 +55,7 @@ jobs:
 
   publish-pypi:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_PYPI == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -65,6 +67,54 @@ jobs:
           path: dist/
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  binaries:
+    # One-file double-click executables. Built and smoke-tested on every run,
+    # attached to the GitHub Release only on a tag.
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: scanline-windows.exe
+            built: scanline.exe
+          - os: macos-latest
+            asset: scanline-macos
+            built: scanline
+          - os: ubuntu-latest
+            asset: scanline-linux
+            built: scanline
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build
+        run: pyinstaller packaging/scanline.spec --noconfirm
+
+      - name: Name the artifact
+        shell: bash
+        run: mv "dist/${{ matrix.built }}" "dist/${{ matrix.asset }}"
+
+      - name: Smoke test
+        shell: bash
+        run: python packaging/smoke.py "dist/${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
 
   image:
     # On a dry run this builds both architectures but pushes nothing.
@@ -109,7 +159,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   github-release:
-    needs: [build, publish-pypi, image]
+    # Deliberately not gated on publish-pypi: PyPI is optional, and a skipped or
+    # failed PyPI job must not block the release.
+    needs: [build, binaries, image]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -120,7 +172,17 @@ jobs:
           name: dist
           path: dist/
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: scanline-*
+          path: bin/
+          merge-multiple: true
+
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: dist/*
+          files: |
+            dist/*
+            bin/scanline-windows.exe
+            bin/scanline-macos
+            bin/scanline-linux
