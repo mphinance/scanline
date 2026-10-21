@@ -44,7 +44,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
 
 [project.urls]
 Homepage = "https://github.com/mphinance/scanline"

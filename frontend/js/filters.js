@@ -52,7 +52,9 @@ import { pickDefaultField } from './defaults.js';
 
   const NUMERIC_OPS = [
     OP.gt, OP.gte, OP.lt, OP.lte, OP.eq, OP.neq,
-    OP.between, OP.notBetween, OP.abovePct, OP.belowPct,
+    // above_pct / below_pct take [field, ratio], which this builder has no input
+    // for. They stay defined for saved screens and presets but are not offered.
+    OP.between, OP.notBetween,
     OP.crosses, OP.crossesAb, OP.crossesBe,
     OP.inWeek, OP.inMonth, OP.empty, OP.notEmpty,
   ];

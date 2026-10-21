@@ -127,10 +127,12 @@ def _apply_op(c, op: str, value: Any):
     if op == "not_between":
         a, b = value
         return c.not_between(a, b)
-    if op == "above_pct":
-        return c.above_pct(*value)
-    if op == "below_pct":
-        return c.below_pct(*value)
+    if op in ("above_pct", "below_pct"):
+        # The library wants (other_field, ratio): close >= field * ratio for
+        # above_pct, close <= field * ratio for below_pct.
+        if not (isinstance(value, (list, tuple)) and len(value) == 2):
+            raise ValueError(f"{op} needs [field, ratio], e.g. [\"price_52_week_high\", 0.98]")
+        return getattr(c, op)(*value)
     if op == "crosses":
         return c.crosses(value)
     if op == "crosses_above":

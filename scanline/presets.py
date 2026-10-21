@@ -98,7 +98,7 @@ PRESETS: list[dict] = [
         "market": "america",
         "columns": _CORE + ["price_52_week_low", "Perf.Y"],
         "filters": [
-            {"field": "close", "op": "below_pct", "value": ["price_52_week_low", 0.02]},
+            {"field": "close", "op": "below_pct", "value": ["price_52_week_low", 1.02]},
             {"field": "market_cap_basic", "op": ">", "value": 3e8},
         ],
         "match": "all",

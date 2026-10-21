@@ -166,9 +166,11 @@ def test_rejection_expires_and_resets_on_new_cookie(up, monkeypatch):
     monkeypatch.setenv("SCANLINE_TV_SESSIONID", SID)
     realtime.mark_rejected()
     assert realtime.mode() == "cookie_rejected"
-    monkeypatch.setattr(realtime.time, "time", lambda: 10**12)
-    assert realtime.mode() == "realtime"
-    monkeypatch.undo()
+    # Scoped patch: a bare monkeypatch.undo() would also revert the config-home
+    # redirect and let save_cookie below write the developer's real cookie file.
+    with monkeypatch.context() as m:
+        m.setattr(realtime.time, "time", lambda: 10**12)
+        assert realtime.mode() == "realtime"
     monkeypatch.setenv("SCANLINE_TV_SESSIONID", SID)
     realtime.mark_rejected()
     realtime.save_cookie(SID)
