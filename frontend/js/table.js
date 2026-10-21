@@ -124,13 +124,21 @@ function emptyCard(result) {
   const err = result && result.meta && result.meta.error;
   const title = document.createElement('div');
   title.className = 'empty-title';
-  title.textContent = err ? 'QUERY ERROR' : 'NO MATCHES';
+  title.textContent = err ? 'SCAN FAILED' : 'NO MATCHES';
   const body = document.createElement('div');
   body.textContent = err
     ? String(err)
     : 'No rows came back for this scan. Loosen the filters or pick another market.';
   wrap.appendChild(title);
   wrap.appendChild(body);
+  if (err) {
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn btn-primary';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => document.dispatchEvent(new CustomEvent('screener:retry')));
+    wrap.appendChild(retry);
+  }
   return wrap;
 }
 

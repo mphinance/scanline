@@ -22,6 +22,12 @@
   <!-- Boot sweep, removed after the power-on sequence finishes. -->
   <div id="boot" aria-hidden="true"></div>
 
+  <!-- First paint: shown until the catalog and first screen land. -->
+  <div id="boot-splash" role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="splash-label">SCANLINE &middot; loading market data</div>
+  </div>
+
   <div id="app">
 
     <!-- ============ TOP BAR ============ -->
