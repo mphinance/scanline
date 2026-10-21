@@ -21,7 +21,10 @@ from tradingview_screener import (
     stocks,
 )
 
-from .fields import default_columns, validate_field
+import requests
+
+from . import realtime
+from .fields import default_columns, field_type, validate_field
 
 # Each market maps to the package helper that configures the correct upstream
 # scan context. set_markets('crypto') returns 0 rows for several markets, so we
@@ -40,7 +43,7 @@ def _base_query(market: str) -> Query:
     """Return a fresh Query already scoped to the given market."""
     factory = _MARKET_QUERY.get(market)
     if factory is None:
-        raise ScreenerError(f"Unknown market: {market}")
+        raise ScreenerError(f"Unknown market: {market}", "unknown_market")
     return factory()
 
 # Markets the screener can target.
@@ -56,8 +59,51 @@ MARKETS: list[dict] = [
 _MARKET_IDS = {m["id"] for m in MARKETS}
 
 
+# Error codes that mean the caller's request was bad (HTTP 400). Everything
+# else is an upstream failure (HTTP 502).
+VALIDATION_CODES = frozenset({
+    "invalid_request", "unknown_market", "unknown_field", "bad_value",
+    "bad_operator", "unknown_sort_field",
+})
+
+
 class ScreenerError(Exception):
-    """Clean, user-facing error from the screener service."""
+    """Clean, user-facing error from the screener service.
+
+    `code` is a short stable machine string; `detail` an optional one-liner.
+    Neither ever carries raw library text or credentials.
+    """
+
+    def __init__(self, message: str, code: str = "invalid_request", detail: str | None = None):
+        super().__init__(message)
+        self.code = code
+        self.detail = detail
+
+    @property
+    def is_validation(self) -> bool:
+        return self.code in VALIDATION_CODES
+
+
+def _upstream_error(exc: BaseException) -> ScreenerError:
+    """Map any upstream exception to a short human message.
+
+    Deliberately never uses str(exc): library text is long, leaks URLs and can
+    carry request internals.
+    """
+    if isinstance(exc, requests.exceptions.Timeout):
+        return ScreenerError("TradingView took too long to respond. Try again shortly.",
+                             "upstream_timeout", "Timeout")
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return ScreenerError("Could not reach TradingView. Check the network and try again.",
+                             "upstream_unreachable", "ConnectionError")
+    if isinstance(exc, requests.exceptions.HTTPError):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 429:
+            return ScreenerError("TradingView is rate limiting requests. Wait a moment and retry.",
+                                 "upstream_rate_limited", "HTTP 429")
+        return ScreenerError("TradingView rejected the query.", "upstream_error",
+                             f"HTTP {status}" if status else "HTTPError")
+    return ScreenerError("The TradingView query failed.", "upstream_error", type(exc).__name__)
 
 
 # Operators that take a single comparison value.
@@ -112,18 +158,83 @@ def _apply_op(c, op: str, value: Any):
         return c.empty()
     if op == "not_empty":
         return c.not_empty()
-    raise ScreenerError(f"Unsupported operator: {op}")
+    raise ScreenerError(f"Unsupported operator: {op}", "bad_operator")
+
+
+_SCALAR_OPS = {">", ">=", "<", "<=", "==", "=", "!=", "crosses", "crosses_above", "crosses_below"}
+_PAIR_OPS = {"between", "not_between", "in_day_range", "in_week_range", "in_month_range",
+             "above_pct", "below_pct"}
+_LIST_OPS = {"isin", "not_in"}
+_TEXT_OPS = {"like", "not_like"}
+_NO_VALUE_OPS = {"empty", "not_empty"}
+KNOWN_OPS = _SCALAR_OPS | _PAIR_OPS | _LIST_OPS | _TEXT_OPS | _NO_VALUE_OPS
+
+
+def _is_number(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and not (
+        isinstance(v, float) and (math.isnan(v) or math.isinf(v))
+    )
+
+
+def _coerce_operand(field: str, v: Any) -> Any:
+    """Validate one comparison operand and return it (numeric strings become
+    floats). A string is accepted when the field is text-typed or when it is
+    itself a real field id (cross-field compare)."""
+    if _is_number(v):
+        return v
+    if isinstance(v, str):
+        if field_type(field) == "str":
+            return v
+        if validate_field(v):
+            return v
+        try:
+            f = float(v)
+        except ValueError:
+            f = None
+        if f is not None and _is_number(f):
+            return f
+        raise ScreenerError(
+            f"Filter on '{field}': value '{v[:40]}' is not a number or a known field id.",
+            "bad_value")
+    raise ScreenerError(f"Filter on '{field}': value must be a number or a field id.", "bad_value")
+
+
+def _check_filter_value(field: str, op: str, value: Any) -> Any:
+    """Validate (and lightly coerce) a filter value for its operator."""
+    if op in _NO_VALUE_OPS:
+        return value
+    if op in _TEXT_OPS:
+        if not isinstance(value, str) or not value:
+            raise ScreenerError(f"Filter on '{field}': '{op}' needs a non-empty text value.",
+                                "bad_value")
+        return value
+    if op in _LIST_OPS:
+        if not isinstance(value, (list, tuple)) or not value:
+            raise ScreenerError(f"Filter on '{field}': '{op}' needs a non-empty list.", "bad_value")
+        if field_type(field) == "str":
+            return list(value)
+        return [_coerce_operand(field, v) for v in value]
+    if op in _PAIR_OPS:
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            raise ScreenerError(f"Filter on '{field}': '{op}' needs a [a, b] pair.", "bad_value")
+        return [_coerce_operand(field, v) for v in value]
+    return _coerce_operand(field, value)
 
 
 def _build_conditions(filters: list[dict]):
-    """Turn filter dicts into a list of column conditions."""
+    """Turn filter dicts into a list of column conditions, validating each."""
     conds = []
     for filt in filters or []:
         field = filt.get("field")
         op = filt.get("op", ">")
         value = filt.get("value")
         if not field:
-            raise ScreenerError("Filter missing field")
+            raise ScreenerError("Filter missing field", "unknown_field")
+        if not validate_field(field):
+            raise ScreenerError(f"Unknown filter field '{field}'.", "unknown_field")
+        if op not in KNOWN_OPS:
+            raise ScreenerError(f"Unsupported operator '{op}' on field '{field}'.", "bad_operator")
+        value = _check_filter_value(field, op, value)
         conds.append(_apply_op(col(field), op, value))
     return conds
 
@@ -134,6 +245,28 @@ def _json_safe(value: Any) -> Any:
         if math.isnan(value) or math.isinf(value):
             return None
     return value
+
+
+def _fetch(q: Query) -> tuple[int, Any]:
+    """Run the query, with the session cookie when real-time mode is on.
+
+    If TradingView refuses the cookie (401/403) we flag it rejected and retry
+    once without it, so the screener degrades to delayed data instead of
+    failing. Every exception raised on the cookie path is re-raised `from None`
+    so no request object (which carries the Cookie header) rides along.
+    """
+    cookies = realtime.active_cookies()
+    if cookies:
+        try:
+            return q.get_scanner_data(cookies=cookies)
+        except requests.exceptions.HTTPError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status not in (401, 403):
+                raise _upstream_error(exc) from None
+            realtime.mark_rejected()
+        except Exception as exc:  # noqa: BLE001
+            raise _upstream_error(exc) from None
+    return q.get_scanner_data()
 
 
 def run_query(
@@ -151,14 +284,25 @@ def run_query(
     from the first sort key. Raises ScreenerError on any failure.
     """
     if market not in _MARKET_IDS:
-        raise ScreenerError(f"Unknown market: {market}")
+        raise ScreenerError(f"Unknown market: {market}", "unknown_market")
 
     columns = list(columns) if columns else default_columns(market)
 
-    # Drop ids that are not in the catalog so a typo cannot blow up the query.
-    columns = [c for c in columns if validate_field(c)]
-    if not columns:
-        columns = default_columns(market)
+    # An unknown column is an error, never silently dropped.
+    bad = [c for c in columns if not validate_field(c)]
+    if bad:
+        raise ScreenerError(
+            "Unknown column" + ("s" if len(bad) > 1 else "") + ": "
+            + ", ".join(f"'{c}'" for c in bad[:5]) + ".", "unknown_field")
+    if match not in ("all", "any"):
+        raise ScreenerError(f"Bad match '{match}': use 'all' or 'any'.", "invalid_request")
+    for key in sort or []:
+        if key.get("dir", "desc") not in ("asc", "desc"):
+            raise ScreenerError(f"Bad sort dir '{key.get('dir')}': use 'asc' or 'desc'.",
+                                "invalid_request")
+        f = key.get("field")
+        if not f or not validate_field(f):
+            raise ScreenerError(f"Unknown sort field '{f}'.", "unknown_sort_field")
 
     # Always include name; ticker is added automatically by the package.
     select_cols: list[str] = []
@@ -171,7 +315,8 @@ def run_query(
     except ScreenerError:
         raise
     except Exception as exc:  # noqa: BLE001
-        raise ScreenerError(f"Bad filter: {exc}") from exc
+        raise ScreenerError("A filter value has the wrong shape for its operator.",
+                            "bad_value", type(exc).__name__) from None
 
     try:
         q = _base_query(market).select(*select_cols)
@@ -214,16 +359,15 @@ def run_query(
             first = sort[0]
             field = first.get("field")
             ascending = first.get("dir", "desc") != "desc"
-            if field and validate_field(field):
-                q = q.order_by(field, ascending=ascending)
+            q = q.order_by(field, ascending=ascending)
 
         q = q.offset(max(0, offset)).limit(max(1, limit))
 
-        count, df = q.get_scanner_data()
+        count, df = _fetch(q)
     except ScreenerError:
         raise
     except Exception as exc:  # noqa: BLE001
-        raise ScreenerError(f"Screener query failed: {exc}") from exc
+        raise _upstream_error(exc) from None
 
     # DataFrame -> json-safe records.
     records: list[dict] = []
@@ -231,4 +375,5 @@ def run_query(
     for raw in df.to_dict("records"):
         records.append({k: _json_safe(v) for k, v in raw.items()})
 
-    return {"count": int(count), "rows": records, "columns": df_cols}
+    return {"count": int(count), "rows": records, "columns": df_cols,
+            "mode": realtime.mode()}

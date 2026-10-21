@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+# Hard ceiling on rows per request, shared by the HTTP API and the MCP tools.
+MAX_LIMIT = 1000
 
 
 class Filter(BaseModel):
@@ -25,7 +29,7 @@ class Computed(BaseModel):
 class Stat(BaseModel):
     """An in-result statistic request."""
 
-    fn: str  # zscore | pctrank | rank | norm | madzscore
+    fn: Literal["zscore", "pctrank", "rank", "norm", "madzscore", "winsor", "decile"]
     field: str
 
 
@@ -34,7 +38,7 @@ class FactorWeight(BaseModel):
 
     field: str
     weight: float = 1.0
-    dir: str = "high"  # high | low
+    dir: Literal["high", "low"] = "high"
 
 
 class Factor(BaseModel):
@@ -47,7 +51,7 @@ class SortKey(BaseModel):
     """A single sort key."""
 
     field: str
-    dir: str = "desc"  # asc | desc
+    dir: Literal["asc", "desc"] = "desc"
 
 
 class ScreenRequest(BaseModel):
@@ -56,13 +60,13 @@ class ScreenRequest(BaseModel):
     market: str = "america"
     columns: list[str] = Field(default_factory=list)
     filters: list[Filter] = Field(default_factory=list)
-    match: str = "all"  # all | any
+    match: Literal["all", "any"] = "all"
     computed: list[Computed] = Field(default_factory=list)
     stats: list[Stat] = Field(default_factory=list)
     factor: Factor | None = None
     sort: list[SortKey] = Field(default_factory=list)
-    limit: int = 150
-    offset: int = 0
+    limit: Annotated[int, Field(ge=1, le=MAX_LIMIT)] = 150
+    offset: Annotated[int, Field(ge=0)] = 0
 
 
 class ScreenMeta(BaseModel):
@@ -72,6 +76,12 @@ class ScreenMeta(BaseModel):
     ms: int = 0
     market: str = "america"
     error: str | None = None
+    # Short stable machine code and a one-line detail, set whenever error is.
+    error_code: str | None = None
+    detail: str | None = None
+    # "delayed" | "realtime" | "cookie_rejected". Never carries the cookie.
+    mode: str = "delayed"
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ScreenResponse(BaseModel):
