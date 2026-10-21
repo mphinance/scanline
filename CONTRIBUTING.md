@@ -42,18 +42,18 @@ default column set.
 ## How to add things
 
 ### A preset scan
-Add a dict to `PRESETS` in `backend/presets.py`. Use real field ids and the op
-strings from `backend/screener._apply_op`. Give it `id`, `name`, `description`,
+Add a dict to `PRESETS` in `scanline/presets.py`. Use real field ids and the op
+strings from `scanline/screener._apply_op`. Give it `id`, `name`, `description`,
 `market`, `columns`, `filters`, `match`, `sort`, and an optional `group`. The
 tests in `tests/test_backend.py` validate every column and filter field.
 
 ### A catalog field
 Add an `_f(id, label, group, type, unit)` entry in the right group in
-`backend/fields.py`. Confirm it returns data live first. Types are one of
+`scanline/fields.py`. Confirm it returns data live first. Types are one of
 `num, pct, price, int, str, bignum`.
 
 ### An MCP tool
-Add a `@mcp.tool` function in `backend/mcp_server.py`. Build a `ScreenRequest`
+Add a `@mcp.tool` function in `scanline/mcp_server.py`. Build a `ScreenRequest`
 and call `_run` for a screen-shaped tool, or resolve a row with `_resolve_row`
 and compose the helpers for a symbol-intelligence tool. Add a test in
 `tests/test_mcp.py` (offline for wiring and pure helpers, `@pytest.mark.live`

@@ -538,3 +538,12 @@ underneath it.
 - Headless screenshots use `docs/capture.py` (Playwright). The Claude-in-Chrome CDP capture path
   times out on this machine for backgrounded tabs, so the standalone capture is the supported route.
 - Real-time data needs TradingView cookies passed to `get_scanner_data`. Delayed data needs nothing.
+
+- **2026-10-21** Rename for release. `backend/` is now the `scanline/` package and
+  the distribution is `scanline-screener` (`scanline` on PyPI belongs to an
+  unrelated project). The frontend ships inside the wheel as `scanline/static`,
+  replacing the top-level `backend` and `scanline_frontend` names that would have
+  collided with other distributions. `scanline` and `scanline-mcp` commands are
+  unchanged. Verified: wheel builds, installs into an empty venv, serves `/` and
+  `/api/health`. Earlier entries above still say `backend/`; they are history.
+  Plan for the rest of the release: `docs/PLAN-v1.md`.

@@ -21,8 +21,8 @@ implemented yet.
 |---|---------|-------|-----|
 | 1 | Detail drawer never appears. `#drawer-host` is translated off-screen and nothing adds `.open`. Every row click does nothing visible. VERIFIED | `frontend/css/layout.css:282-300`, `frontend/js/detail.js:~340-357` | Toggle `.open` on the host, Escape and scrim close it. |
 | 2 | Layout is broken under ~900px. Page scrolls horizontally (scrollWidth 1329 at 390px), the 280px rail leaves ~110px for the table, collapse button does nothing visible. VERIFIED | `layout.css`, `table.css` | Off-canvas rail with a hamburger below 900px, no page-level horizontal scroll. Load `responsive-craft` first. |
-| 3 | `above_pct` / `below_pct` pass a list as a single arg. Breaks presets `high_52w`, `low_52w`, `breakouts`, the MCP `run_preset`, and the UI's "above by %" operator. All return 0 rows. VERIFIED | `backend/screener.py:84-87` | Unpack the value. Add an offline test that builds every preset's filters so this class of bug cannot ship again. |
-| 4 | `9**9**9**9` as a computed column pins a core and kills `/api/health`. Reachable from the HTTP API and the MCP `screen` tool. VERIFIED | `backend/analytics.py:132-133` | Bound exponent and result size, cap expression length and AST depth, test it. |
+| 3 | `above_pct` / `below_pct` pass a list as a single arg. Breaks presets `high_52w`, `low_52w`, `breakouts`, the MCP `run_preset`, and the UI's "above by %" operator. All return 0 rows. VERIFIED | `scanline/screener.py:84-87` | Unpack the value. Add an offline test that builds every preset's filters so this class of bug cannot ship again. |
+| 4 | `9**9**9**9` as a computed column pins a core and kills `/api/health`. Reachable from the HTTP API and the MCP `screen` tool. VERIFIED | `scanline/analytics.py:132-133` | Bound exponent and result size, cap expression length and AST depth, test it. |
 | 5 | Dead field `dividend_yield_recent` (null on every US row). Already fixed on `master` by #22; this branch is behind it. | `presets.py`, `mcp_server.py` | Rebase onto master, then confirm `dividend_screen`, `dividend_aristocrats` and the Value factor preset return real rows. |
 
 ### Wrong, but not fatal (P1)
@@ -108,7 +108,7 @@ Dependency on Phase 0 only; can run in parallel with Phase 2.
    `scanline-mcp`. Do this before the post goes out; names get squatted.
 2. **Restructure to a real `scanline/` package.** STATUS.md already flags that the wheel
    installs top-level `backend/` and `scanline_frontend/`, which collides with any
-   other distribution using those names. Move `backend/` to `scanline/`, frontend to
+   other distribution using those names. Move `scanline/` to `scanline/`, frontend to
    `scanline/static/`, drop test files from the wheel, keep `run.py`/`run_mcp.py` as
    shims. One mechanical PR, nothing else mixed in.
 3. **Launch UX.** `scanline` opens the browser by default (`--no-browser` to skip),
@@ -170,7 +170,7 @@ Then the full plan as 1.0.x. Real-time mode lands in Phase 2 alongside the foote
 
 1. PyPI name: `scanline-screener`? Nothing gets published until you confirm.
 2. Restructure to `scanline/` before the first PyPI upload (recommended: once a
-   wheel with top-level `backend/` is on PyPI, renaming is a breaking change).
+   wheel with top-level `scanline/` is on PyPI, renaming is a breaking change).
 
 ## Decisions needed from you (original list)
 

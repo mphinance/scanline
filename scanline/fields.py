@@ -289,7 +289,7 @@ _CURATED: list[dict] = (
 )
 
 # The complete field universe, generated from TradingView's live metainfo by
-# backend/gen_fields.py (committed as fields_all.json, no runtime network call).
+# scanline/gen_fields.py (committed as fields_all.json, no runtime network call).
 # Curated entries win on id, so common fields keep their friendly labels and the
 # remaining ~850 base fields are still searchable in the column picker.
 import json as _json

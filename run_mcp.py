@@ -9,10 +9,10 @@ For a remote / multi-client setup, serve streamable-http on a port:
     python run_mcp.py --http 8765
 
 The server exposes the same live screen engine the web app uses (no TradingView
-account needed). See backend/mcp_server.py for the tool catalog.
+account needed). See scanline/mcp_server.py for the tool catalog.
 """
 
-from backend.mcp_server import main
+from scanline.mcp_server import main
 
 if __name__ == "__main__":
     main()

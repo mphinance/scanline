@@ -14,7 +14,7 @@ import datetime as dt
 import pytest
 from fastmcp import Client
 
-from backend.mcp_server import (
+from scanline.mcp_server import (
     _compute_breadth,
     _compute_dividend_quality,
     _days_to_earnings,
@@ -250,7 +250,7 @@ def test_every_broad_america_tool_takes_include_otc():
     """
     import inspect
 
-    from backend import mcp_server
+    from scanline import mcp_server
 
     for name in OTC_GUARDED_TOOLS:
         fn = getattr(mcp_server, name)
@@ -268,7 +268,7 @@ def test_unavailable_presets_are_refused_with_a_reason():
     today" rather than "this data does not exist". The refusal has to carry the
     reason, since that is the only thing distinguishing the two.
     """
-    from backend.presets import PRESETS
+    from scanline.presets import PRESETS
 
     unavailable = [p for p in PRESETS if p.get("unavailable")]
     assert unavailable, "expected at least one preset marked unavailable"
@@ -287,8 +287,8 @@ def test_unavailable_reason_is_exposed_to_the_web_client():
     from the preset body, so it can only refuse what the payload tells it about.
     Without this the browser silently runs the scan the MCP server declines.
     """
-    from backend.app import presets as presets_endpoint
-    from backend.presets import PRESETS
+    from scanline.app import presets as presets_endpoint
+    from scanline.presets import PRESETS
 
     expected = {p["id"] for p in PRESETS if p.get("unavailable")}
 
@@ -1804,8 +1804,8 @@ def test_broad_america_tools_return_no_otc_by_default():
     on both. Those two rank on change and gap, which a sub-penny shell wins by
     construction, so they are the sharpest test that the guard is live.
     """
-    from backend.models import ScreenRequest
-    from backend.pipeline import run_screen
+    from scanline.models import ScreenRequest
+    from scanline.pipeline import run_screen
 
     resp = run_screen(ScreenRequest(
         market="america", columns=["name", "exchange"],
@@ -1850,8 +1850,8 @@ def test_a_trivially_true_filter_does_not_change_the_universe():
     universe than the unfiltered default view, which is also where a good share
     of the OTC junk came from.
     """
-    from backend.models import ScreenRequest
-    from backend.pipeline import run_screen
+    from scanline.models import ScreenRequest
+    from scanline.pipeline import run_screen
 
     def count(filters):
         r = run_screen(ScreenRequest(market="america", columns=["name"],
@@ -1871,8 +1871,8 @@ def test_a_trivially_true_filter_does_not_change_the_universe():
 def test_match_any_keeps_the_market_constraints_too():
     # where2() assigns query['filter2'], which carries the instrument type
     # constraints, so the match="any" path needs the same composition.
-    from backend.models import ScreenRequest
-    from backend.pipeline import run_screen
+    from scanline.models import ScreenRequest
+    from scanline.pipeline import run_screen
 
     def count(filters, match="all"):
         r = run_screen(ScreenRequest(market="america", columns=["name"],

@@ -11,7 +11,7 @@ build on TradingView: the screener app you run at home, a static widget showcase
 for GitHub Pages, and an MCP layer that makes the whole thing AI-drivable.
 
 Two halves:
-- **The app** (`backend/` + `frontend/`): the full screener. FastAPI backend over
+- **The app** (`scanline/` + `frontend/`): the full screener. FastAPI backend over
   the `tradingview-screener` package, vanilla-JS frontend, no build step.
 - **The showcase** (`showcase/`): a static, no-backend site (TradingView widgets +
   Lightweight Charts) that deploys to GitHub Pages.
@@ -29,12 +29,12 @@ Two halves:
    not add a bundler, framework, or transpiler.
 5. **Every field id must be real.** Catalog and preset fields are validated
    against the live TradingView field universe. A typo that returns nothing is a
-   bug. See `backend/fields.py` and the preset tests.
+   bug. See `scanline/fields.py` and the preset tests.
 
 ## Layout
 
 ```
-backend/        FastAPI app + the screen engine
+scanline/        FastAPI app + the screen engine
   app.py          HTTP routes, static mount, TTL cache wrapper
   pipeline.py     run_screen(): the shared screen pipeline (HTTP and MCP both call it)
   screener.py     thin wrapper over tradingview-screener (Query building, operators)
@@ -71,7 +71,7 @@ python run_mcp.py    # MCP server over stdio (--http 8765 for streamable-http)
 Installed (`pip install .`) the same two are on PATH as `scanline` and
 `scanline-mcp`, and `docker compose up` runs the web app in a container. The web
 app resolves host and port from flags, then `SCANLINE_HOST` / `SCANLINE_PORT`,
-then the loopback default. See `backend/cli.py`.
+then the loopback default. See `scanline/cli.py`.
 
 Keep `requirements.txt` and the `dependencies` list in `pyproject.toml` in step:
 the checkout path installs from the first, `pip install .` resolves the second.
@@ -106,21 +106,21 @@ over the returned rows. The HTTP endpoint and the MCP `screen` tool both call
 
 ## The MCP server
 
-`backend/mcp_server.py` exposes the same engine over the Model Context Protocol
+`scanline/mcp_server.py` exposes the same engine over the Model Context Protocol
 with `fastmcp`. 27 tools (screening, symbol intelligence, market studies), 4 prompts, 3
 resources. The centerpiece is `analyze`, a multi-timeframe chart read (RSI and
 MACD bias on the 1h/4h/1d/1w/1m at once). Full reference and config in
 `docs/MCP.md`.
 
 Every tool that scans a broad `america` universe excludes OTC by default, via
-`_otc_guard` in `backend/mcp_server.py` and `NO_OTC` in `backend/presets.py`.
+`_otc_guard` in `scanline/mcp_server.py` and `NO_OTC` in `scanline/presets.py`.
 It is a data quality filter with no market cap or price floor: sub-penny shells
 post four figure percentage moves, so anything ranking on change or gap returns
 those and nothing else. Lift it per call with `include_otc=True`. `screen` is
 deliberately exempt, being the raw escape hatch. A test enforces that any new
 broad america tool takes the parameter.
 
-One thing to know before touching `backend/screener.py`: `Query.where()` and
+One thing to know before touching `scanline/screener.py`: `Query.where()` and
 `Query.where2()` in `tradingview-screener` ASSIGN their slot rather than append,
 and the market helpers (`stocks('america')` and friends) ship the constraints
 that define the market in exactly those slots. `run_query` composes with them on
@@ -154,12 +154,12 @@ paths:
 
 ## How to extend (common tasks)
 
-- **Add a preset scan:** append to `PRESETS` in `backend/presets.py` using real
-  field ids and the op strings from `backend/screener._apply_op`. The preset
+- **Add a preset scan:** append to `PRESETS` in `scanline/presets.py` using real
+  field ids and the op strings from `scanline/screener._apply_op`. The preset
   tests will fail if any field is unknown.
 - **Add a field to the catalog:** add a `_f(...)` entry in the right group in
-  `backend/fields.py`. Probe it live first so it actually returns data.
-- **Add an MCP tool:** add a `@mcp.tool` function in `backend/mcp_server.py` that
+  `scanline/fields.py`. Probe it live first so it actually returns data.
+- **Add an MCP tool:** add a `@mcp.tool` function in `scanline/mcp_server.py` that
   builds a `ScreenRequest` and calls `_run`, or composes the helpers. Add a test
   in `tests/test_mcp.py` (offline for wiring, `@pytest.mark.live` for data).
 - **Add a frontend feature:** a new ES module in `frontend/js/` that calls

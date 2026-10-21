@@ -17,7 +17,7 @@ Drive it from the browser, from the HTTP API, or from an AI agent: the same engi
 over the **Model Context Protocol**, so Claude can screen, score, and rank markets for you in
 plain language. See [MCP server](#mcp-server-screen-from-an-agent) below.
 
-The repo is two halves. The **app** (`backend/` + `frontend/`) is the full screener you run at
+The repo is two halves. The **app** (`scanline/` + `frontend/`) is the full screener you run at
 home. The **showcase** (`showcase/`) is a static, pure-TradingView demo, a widget gallery plus a
 live Lightweight Charts panel, that deploys to GitHub Pages:
 **[mphinance.github.io/scanline](https://mphinance.github.io/scanline/)**.
@@ -174,9 +174,9 @@ by my Value factor."* No TradingView account needed; data is live and delayed.
 ## Stack
 
 - **Backend:** FastAPI + uvicorn, a thin wrapper over `tradingview-screener` with an in-memory TTL
-  cache and a sandboxed analytics engine. Screen pipeline factored into `backend/pipeline.py` and
+  cache and a sandboxed analytics engine. Screen pipeline factored into `scanline/pipeline.py` and
   shared by the HTTP API and the MCP server.
-- **MCP:** `fastmcp` server in `backend/mcp_server.py` exposing the screen engine as tools and the
+- **MCP:** `fastmcp` server in `scanline/mcp_server.py` exposing the screen engine as tools and the
   catalogs as resources. stdio or streamable-http.
 - **Frontend:** Vanilla JS ES modules and hand-rolled synthwave CSS. No build step.
 
@@ -223,7 +223,7 @@ docker run --rm scanline python -m pytest tests/ -q -m "not live" -p no:cachepro
 ## Layout
 
 ```
-backend/      FastAPI app, screen pipeline, screener service, analytics, field catalog, presets, cache
+scanline/      FastAPI app, screen pipeline, screener service, analytics, field catalog, presets, cache
               + mcp_server.py (the same engine over MCP), cli.py (the `scanline` command)
 frontend/     index.html, css/, js/ feature modules (filters, columns, presets, factor, table, ...)
 showcase/     the static TradingView widget gallery deployed to GitHub Pages
