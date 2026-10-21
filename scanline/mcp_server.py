@@ -8,8 +8,8 @@ fields across stocks, crypto, forex, futures, bonds, and CFDs.
 No TradingView account needed. Data is live and delayed, same as the web app.
 
 Run it:
-    python -m backend.mcp_server              # stdio (Claude Desktop / Code)
-    python -m backend.mcp_server --http 8765  # streamable-http on a port
+    python -m scanline.mcp_server              # stdio (Claude Desktop / Code)
+    python -m scanline.mcp_server --http 8765  # streamable-http on a port
 
 Design notes, informed by the existing TradingView MCP servers:
   - One unified `screen` tool (our backend already spans 6 markets) plus preset

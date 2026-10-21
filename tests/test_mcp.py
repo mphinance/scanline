@@ -381,9 +381,9 @@ def test_fundamentals_columns_are_populated_in_their_own_market():
     dividend_yield_recent / payout_ratio / days_to_earnings all being null on every US row before
     the tool shipped, rather than after.
     """
-    from backend.mcp_server import _FUNDAMENTALS_COLUMNS
-    from backend.models import Filter, ScreenRequest
-    from backend.pipeline import run_screen
+    from scanline.mcp_server import _FUNDAMENTALS_COLUMNS
+    from scanline.models import Filter, ScreenRequest
+    from scanline.pipeline import run_screen
 
     cols = [c for c in _FUNDAMENTALS_COLUMNS if c not in ("name", "description", "sector",
                                                             "industry", "number_of_employees")]

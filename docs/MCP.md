@@ -55,7 +55,7 @@ Then ask in plain language, for example: "Screen US mega caps with RSI under 35,
 add a dollar-volume column, and rank them by my Value factor," or "Read NVDA
 across timeframes and chart it."
 
-## Tools (27)
+## Tools (28)
 
 Every tool also carries a full docstring, which is what an MCP client actually
 reads when choosing between them. The market-study tools below carry the most
