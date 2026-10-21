@@ -26,6 +26,7 @@
 
     <!-- ============ TOP BAR ============ -->
     <header id="topbar">
+      <button id="rail-toggle" type="button" aria-label="Open tools panel" aria-controls="left-rail" aria-expanded="false">&#9776;</button>
       <div class="brand">
         <span class="brand-mark">&#9650; NEON</span>
         <span class="brand-sub">Screener</span>
@@ -101,7 +102,7 @@
     <footer id="app-footer">
       <span>SCANLINE</span>
       <span class="sep">|</span>
-      <span>quant analytics over live market data</span>
+      <span class="tagline">quant analytics over live market data</span>
       <span class="sep">|</span>
       <span>no auth, delayed data</span>
     </footer>
@@ -110,6 +111,7 @@
 
   <!-- ============ FLOATING REGIONS (outside the grid) ============ -->
   <!-- row detail drawer mounts here -->
+  <div id="rail-scrim" aria-hidden="true"></div>
   <div id="drawer-host"></div>
   <!-- command palette (Ctrl/Cmd-K) mounts here -->
   <div id="command-palette-host"></div>

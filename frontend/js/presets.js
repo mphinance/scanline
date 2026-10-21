@@ -40,7 +40,7 @@ function injectStyles() {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 10px;
+      font-size: 12px;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       color: var(--muted);
@@ -48,7 +48,7 @@ function injectStyles() {
     }
     .pst-count {
       font-family: var(--font-mono);
-      font-size: 10px;
+      font-size: 12px;
       color: var(--muted);
       opacity: 0.8;
     }
@@ -60,7 +60,7 @@ function injectStyles() {
       border-radius: var(--radius-sm);
       color: var(--text);
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 12px;
       outline: none;
       transition: box-shadow 0.15s ease, border-color 0.15s ease;
     }
@@ -74,7 +74,7 @@ function injectStyles() {
       gap: var(--sp-2);
       margin-top: 2px;
       font-family: var(--font-mono);
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.16em;
       text-transform: uppercase;
@@ -136,7 +136,7 @@ function injectStyles() {
     }
     .pst-card.is-active .pst-name { text-shadow: 0 0 8px rgba(0, 240, 255, 0.5); }
     .pst-desc {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
       line-height: 1.35;
     }
@@ -145,7 +145,7 @@ function injectStyles() {
       padding: 1px 6px;
       border-radius: 999px;
       font-family: var(--font-mono);
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
@@ -185,14 +185,14 @@ function injectStyles() {
       border-color: var(--muted);
     }
     .pst-reason {
-      font-size: 10px;
+      font-size: 12px;
       line-height: 1.35;
       color: var(--muted);
       font-style: italic;
     }
     .pst-weights {
       font-family: var(--font-mono);
-      font-size: 10px;
+      font-size: 12px;
       color: var(--muted);
       opacity: 0.85;
       overflow: hidden;
@@ -201,7 +201,7 @@ function injectStyles() {
     }
     .pst-empty {
       padding: var(--sp-2);
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
       text-align: center;
       letter-spacing: 0.03em;

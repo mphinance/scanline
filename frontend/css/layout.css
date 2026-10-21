@@ -4,14 +4,16 @@
 
 #app {
   display: grid;
-  grid-template-rows: var(--topbar-h) 1fr var(--footer-h);
-  grid-template-columns: var(--rail-w) 1fr;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
   grid-template-areas:
     "topbar topbar"
     "rail   main"
     "footer footer";
   height: 100vh;
-  width: 100vw;
+  height: 100dvh;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* ---- Top bar ---- */
@@ -20,8 +22,10 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--sp-4);
+  gap: var(--sp-2) var(--sp-4);
   padding: 0 var(--sp-4);
+  flex-wrap: wrap;
+  min-width: 0;
   background: linear-gradient(180deg, rgba(22, 16, 30, 0.82), rgba(12, 12, 16, 0.62));
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -38,6 +42,7 @@
 }
 
 .brand {
+  flex: 0 0 auto;
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
@@ -58,7 +63,7 @@
 }
 .brand .brand-sub {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.32em;
   text-transform: uppercase;
   font-weight: 600;
@@ -84,8 +89,10 @@ body.booting .brand-mark { animation: neon-flicker 1.2s steps(1) both; }
   display: flex;
   align-items: center;
   gap: var(--sp-3);
+  flex-wrap: wrap;
+  min-width: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -126,7 +133,7 @@ body.booting .brand-mark { animation: neon-flicker 1.2s steps(1) both; }
   flex: 1 1 auto;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -183,7 +190,7 @@ body.booting .brand-mark { animation: neon-flicker 1.2s steps(1) both; }
 }
 
 /* Hidden rail: collapse the grid column and show a thin reveal strip. */
-#app.rail-hidden { grid-template-columns: 0 1fr; }
+#app.rail-hidden { grid-template-columns: 0 minmax(0, 1fr); }
 #app.rail-hidden #left-rail { display: none; }
 #rail-reveal {
   position: fixed;
@@ -263,7 +270,7 @@ body.booting .brand-mark { animation: neon-flicker 1.2s steps(1) both; }
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   color: var(--muted);
   z-index: 10;
@@ -296,3 +303,102 @@ body.booting .brand-mark { animation: neon-flicker 1.2s steps(1) both; }
   display: none;
 }
 #command-palette-host.open { display: block; }
+
+/* ---- Hamburger + off-canvas scrim (only shown under the desktop breakpoint) ---- */
+#rail-toggle { display: none; }
+#rail-scrim { display: none; }
+
+/* Top bar may wrap onto a second line at any width; the rows above size to it. */
+#topbar { min-height: var(--topbar-h); }
+#app-footer { min-height: var(--footer-h); }
+#market-switcher, .mkt-switcher { min-width: 0; max-width: 100%; }
+#market-switcher .mkt-seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+#toolbar, #table-toolbar { flex-wrap: wrap; min-width: 0; }
+#table-host { overscroll-behavior: contain; }
+
+/* ---- Tap targets and text floor, all widths ---- */
+button,
+select,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]) {
+  min-height: 32px;
+}
+.rail-tab, .rail-hide { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+.rail-hide { width: 32px; }
+
+/* ---- Under 900px: off-canvas rail, wrapping top bar, contained table ---- */
+@media (max-width: 899.98px) {
+  #app {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "topbar"
+      "main"
+      "footer";
+  }
+  #app.rail-hidden { grid-template-columns: minmax(0, 1fr); }
+
+  #topbar {
+    flex-wrap: wrap;
+    gap: var(--sp-2) var(--sp-3);
+    padding: var(--sp-2) var(--sp-3);
+    min-height: var(--topbar-h);
+  }
+  .brand .brand-sub { display: none; }
+  #rail-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--cyan);
+    background: rgba(0, 240, 255, 0.06);
+    border: 1px solid rgba(0, 240, 255, 0.35);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  #topbar-actions { margin-left: 0; flex-wrap: wrap; }
+  #status-bar { flex: 1 0 100%; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); white-space: normal; }
+
+  /* The rail slides over the content instead of taking a grid column. */
+  #left-rail,
+  #app.rail-hidden #left-rail {
+    display: flex;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 340px);
+    z-index: 70;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
+    background: var(--bg);
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.6);
+    padding-top: env(safe-area-inset-top, 0);
+  }
+  #app.rail-open #left-rail {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.22s ease, visibility 0s;
+  }
+  #rail-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 65;
+    background: rgba(5, 5, 8, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  #app.rail-open ~ #rail-scrim { opacity: 1; pointer-events: auto; }
+  #rail-reveal, #app.rail-hidden #rail-reveal { display: none; }
+
+  #app-footer { flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); padding: var(--sp-1) var(--sp-3); }
+  #app-footer .tagline, #app-footer .tagline + .sep { display: none; }
+
+  .dtl-drawer { width: 100vw !important; max-width: 100vw !important; }
+}

@@ -28,7 +28,7 @@ function injectStyles() {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 10px;
+      font-size: 12px;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       color: var(--muted);
@@ -68,7 +68,7 @@ function injectStyles() {
       border-radius: var(--radius-sm);
       color: var(--text);
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 12px;
       outline: none;
       cursor: pointer;
       transition: box-shadow 0.15s ease, border-color 0.15s ease;
@@ -83,7 +83,7 @@ function injectStyles() {
       border-radius: var(--radius-sm);
       color: var(--text);
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 12px;
       text-align: right;
       outline: none;
       transition: box-shadow 0.15s ease, border-color 0.15s ease;
@@ -98,7 +98,7 @@ function injectStyles() {
       border-radius: var(--radius-sm);
       color: var(--purple);
       font-family: var(--font-mono);
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.06em;
       cursor: pointer;
@@ -133,7 +133,7 @@ function injectStyles() {
       border: 1px dashed var(--line);
       border-radius: var(--radius-sm);
       color: var(--muted);
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: 0.04em;
       cursor: pointer;
@@ -167,7 +167,7 @@ function injectStyles() {
       border: 1px solid var(--line);
       border-radius: var(--radius-sm);
       color: var(--muted);
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       cursor: pointer;
       transition: color 0.15s ease, border-color 0.15s ease;
@@ -183,7 +183,7 @@ function injectStyles() {
       border: 1px solid rgba(176, 38, 255, 0.3);
       border-radius: var(--radius-sm);
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 12px;
     }
     .fac-top .fac-top-k { color: var(--muted); letter-spacing: 0.06em; }
     .fac-top .fac-top-v { color: var(--purple); font-weight: 700; }

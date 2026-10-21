@@ -142,7 +142,7 @@
   flex: 0 0 auto;
 }
 .dtl-spark-cap {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
@@ -158,7 +158,7 @@
 }
 .dtl-group { margin-bottom: var(--sp-4); }
 .dtl-group-title {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--purple);
@@ -175,7 +175,7 @@
 }
 .dtl-k {
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -203,7 +203,7 @@
   background: rgba(10, 10, 14, 0.6);
 }
 .dtl-refresh .dtl-rf-label {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
@@ -216,7 +216,7 @@
   border-radius: var(--radius-sm);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   outline: none;
 }

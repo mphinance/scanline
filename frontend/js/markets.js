@@ -51,7 +51,7 @@ function injectStyles() {
       gap: var(--sp-2);
     }
     .mkt-label {
-      font-size: 10px;
+      font-size: 12px;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       color: var(--muted);
@@ -77,7 +77,7 @@ function injectStyles() {
       border-radius: var(--radius-sm);
       color: var(--muted);
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;

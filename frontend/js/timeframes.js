@@ -135,7 +135,7 @@ function buildStyles() {
 }
 .tf-label {
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -148,7 +148,7 @@ function buildStyles() {
 }
 .tf-btn {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   padding: 3px 9px;
