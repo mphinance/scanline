@@ -111,6 +111,23 @@ const STAT_LABELS = {
   max: 'MAX', stdev: 'STDEV', sum: 'SUM',
 };
 
+// Column stats are collapsed on first run; the choice persists per browser.
+const STATS_OPEN_KEY = 'scanline.statsOpen';
+function loadStatsOpen() {
+  try {
+    return localStorage.getItem(STATS_OPEN_KEY) === '1';
+  } catch (err) {
+    return false;
+  }
+}
+function saveStatsOpen(open) {
+  try {
+    localStorage.setItem(STATS_OPEN_KEY, open ? '1' : '0');
+  } catch (err) {
+    // Not fatal.
+  }
+}
+
 // One-shot render: convenience wrapper that draws a fresh stateless view.
 export function renderTable(container, result, fieldsIndex) {
   const view = new TableView(container, fieldsIndex);
@@ -691,10 +708,22 @@ export class TableView {
     // Selector: choose all rows or a single stat row.
     const head = document.createElement('div');
     head.className = 'summary-head';
-    const label = document.createElement('span');
-    label.className = 'summary-eyebrow';
-    label.textContent = 'COLUMN STATS · visible rows';
+    const open = loadStatsOpen();
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'summary-eyebrow summary-toggle';
+    label.setAttribute('aria-expanded', String(open));
+    label.textContent = (open ? '\u25BE' : '\u25B8') + ' COLUMN STATS \u00B7 visible rows';
+    label.addEventListener('click', () => {
+      saveStatsOpen(!open);
+      this._renderFooter(rows, columns);
+    });
     head.appendChild(label);
+    if (!open) {
+      wrap.appendChild(head);
+      host.appendChild(wrap);
+      return;
+    }
 
     const sel = document.createElement('select');
     sel.className = 'summary-select';

@@ -10,6 +10,8 @@
 //
 // Registers as module 'factor'. No em dashes anywhere.
 
+import { pickDefaultField } from './defaults.js';
+
 // Numeric field types from the backend catalog that make sense to score on.
 const NUMERIC_TYPES = new Set(['bignum', 'price', 'pct', 'num', 'int']);
 
@@ -277,6 +279,10 @@ window.Screener.registerModule('factor', (ctx) => {
 
   // ---- Build one row. weights item shape: {field, weight, dir}.
   function buildFieldSelect(selectedField) {
+    if (!selectedField) {
+      const used = [...rowsWrap.querySelectorAll('.fac-field')].map((x) => x.value);
+      selectedField = pickDefaultField(numericFields, used, ['change', 'close']);
+    }
     const sel = document.createElement('select');
     sel.className = 'fac-field';
     for (const f of numericFields) {

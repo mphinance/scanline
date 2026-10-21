@@ -14,6 +14,8 @@
 //
 // No em dashes anywhere.
 
+import { pickDefaultField } from './defaults.js';
+
 (function () {
   'use strict';
 
@@ -260,8 +262,9 @@
     panel.appendChild(wrap);
 
     function blankRow() {
-      const firstNumeric = fields.find((f) => isNumericType(f.type)) || fields[0];
-      const fid = firstNumeric ? firstNumeric.id : '';
+      const numeric = fields.filter((f) => isNumericType(f.type));
+      const used = typeof rows !== 'undefined' && Array.isArray(rows) ? rows.map((r) => r.field) : [];
+      const fid = pickDefaultField(numeric.length ? numeric : fields, used);
       const meta = fieldIndex[fid];
       const ops = opsForField(meta);
       return { field: fid, op: ops[0] ? ops[0].op : '>', v1: '', v2: '', list: '', vfield: defaultCrossField(fid) };
