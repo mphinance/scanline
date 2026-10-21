@@ -350,15 +350,27 @@
     host.appendChild(scrim);
   }
 
-  function openDrawer() {
+  let returnFocus = null;
+
+  function openDrawer(trigger) {
     if (!scrim) return;
+    if (!isOpen()) returnFocus = trigger || document.activeElement;
     // Force a reflow so the transform transition runs from the closed state.
     void scrim.offsetWidth;
     scrim.classList.add('open');
+    drawerEl.setAttribute('aria-modal', 'true');
+    drawerEl.tabIndex = -1;
+    drawerEl.focus({ preventScroll: true });
   }
 
   function closeDrawer() {
-    if (scrim) scrim.classList.remove('open');
+    if (!scrim || !scrim.classList.contains('open')) return;
+    scrim.classList.remove('open');
+    const target = returnFocus;
+    returnFocus = null;
+    if (target && target.isConnected && typeof target.focus === 'function') {
+      target.focus({ preventScroll: true });
+    }
   }
 
   function isOpen() {
@@ -548,13 +560,21 @@
     }
   }
 
+  // The element focus should return to: the focused row, else the row by ticker.
+  function rowTrigger(row) {
+    const a = document.activeElement;
+    if (a && a.tagName === 'TR') return a;
+    const key = String(row.ticker || row.name || '').replace(/"/g, '\\"');
+    return key ? document.querySelector('#table-host tr[data-ticker="' + key + '"]') : null;
+  }
+
   function onRowClick(ev) {
     const row = ev.detail;
     if (!row || !ctxRef) return;
     renderToken += 1;
     const token = renderToken;
     renderDrawer(row, null);
-    openDrawer();
+    openDrawer(rowTrigger(row));
     maybeFetchPerf(row, token);
   }
 

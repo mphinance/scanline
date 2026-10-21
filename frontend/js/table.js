@@ -639,8 +639,18 @@ export class TableView {
         tr.appendChild(td);
       }
       // PRESERVED: row click -> global event for the detail drawer module.
-      tr.addEventListener('click', () => {
+      const open = () => {
         document.dispatchEvent(new CustomEvent('screener:rowclick', { detail: row }));
+      };
+      tr.tabIndex = 0;
+      tr.setAttribute('role', 'row');
+      tr.addEventListener('click', open);
+      tr.addEventListener('keydown', (e) => {
+        if (e.target !== tr) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          open();
+        }
       });
       tbody.appendChild(tr);
     });
