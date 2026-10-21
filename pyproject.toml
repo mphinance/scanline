@@ -57,6 +57,9 @@ Issues = "https://github.com/mphinance/scanline/issues"
 # The two things a user runs. Both work from a checkout via run.py and
 # run_mcp.py as well, so the documented commands in CLAUDE.md keep working.
 scanline = "scanline.cli:main"
+# Same launcher under the distribution name, because `uvx scanline-screener`
+# looks for an executable called scanline-screener.
+scanline-screener = "scanline.cli:main"
 scanline-mcp = "scanline.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
