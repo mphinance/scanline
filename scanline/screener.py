@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import requests
 from tradingview_screener import (
     Query,
     bond,
@@ -20,8 +21,6 @@ from tradingview_screener import (
     futures,
     stocks,
 )
-
-import requests
 
 from . import realtime
 from .fields import default_columns, field_type, validate_field

@@ -33,18 +33,18 @@ TYPE_MAP = {
 
 # Best-effort group from a field id, so the full set is at least roughly bucketed.
 GROUP_HINTS = [
-    (re.compile(r"(price_earnings|price_sales|price_book|price_free_cash|enterprise_value|market_cap)", re.I), "Valuation"),
-    (re.compile(r"(dividend|dps|payout)", re.I), "Dividends"),
-    (re.compile(r"(margin|return_on|roe|roa|roic|profit)", re.I), "Profitability"),
-    (re.compile(r"(revenue|income|ebitda|eps|earnings|gross|operating)", re.I), "Income"),
-    (re.compile(r"(debt|asset|liabilit|equity|cash|current_ratio|quick_ratio|book)", re.I), "Balance Sheet"),
-    (re.compile(r"(RSI|Stoch|MACD|CCI|ADX|Mom|AO|ROC|W\.R|UO|BBPower|Recommend)", re.I), "Oscillators"),
-    (re.compile(r"(SMA|EMA|VWMA|VWAP|BB\.|HullMA|Ichimoku|P\.SAR|Pivot)", re.I), "MovingAverages"),
-    (re.compile(r"(Volatility|ATR|beta)", re.I), "Volatility"),
-    (re.compile(r"(volume|Value\.Traded|float|shares)", re.I), "Volume"),
-    (re.compile(r"(Perf|change|gap|premarket|postmarket|High\.|Low\.|price_52)", re.I), "Performance"),
-    (re.compile(r"(close|open|high|low|VWAP|typical)", re.I), "Price"),
-    (re.compile(r"(sector|industry|country|exchange|type|subtype|name|description|currency)", re.I), "Identity"),
+    (re.compile(r"(price_earnings|price_sales|price_book|price_free_cash|enterprise_value|market_cap)", re.IGNORECASE), "Valuation"),
+    (re.compile(r"(dividend|dps|payout)", re.IGNORECASE), "Dividends"),
+    (re.compile(r"(margin|return_on|roe|roa|roic|profit)", re.IGNORECASE), "Profitability"),
+    (re.compile(r"(revenue|income|ebitda|eps|earnings|gross|operating)", re.IGNORECASE), "Income"),
+    (re.compile(r"(debt|asset|liabilit|equity|cash|current_ratio|quick_ratio|book)", re.IGNORECASE), "Balance Sheet"),
+    (re.compile(r"(RSI|Stoch|MACD|CCI|ADX|Mom|AO|ROC|W\.R|UO|BBPower|Recommend)", re.IGNORECASE), "Oscillators"),
+    (re.compile(r"(SMA|EMA|VWMA|VWAP|BB\.|HullMA|Ichimoku|P\.SAR|Pivot)", re.IGNORECASE), "MovingAverages"),
+    (re.compile(r"(Volatility|ATR|beta)", re.IGNORECASE), "Volatility"),
+    (re.compile(r"(volume|Value\.Traded|float|shares)", re.IGNORECASE), "Volume"),
+    (re.compile(r"(Perf|change|gap|premarket|postmarket|High\.|Low\.|price_52)", re.IGNORECASE), "Performance"),
+    (re.compile(r"(close|open|high|low|VWAP|typical)", re.IGNORECASE), "Price"),
+    (re.compile(r"(sector|industry|country|exchange|type|subtype|name|description|currency)", re.IGNORECASE), "Identity"),
 ]
 
 

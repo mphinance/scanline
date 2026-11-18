@@ -15,8 +15,8 @@ from tradingview_screener import Query
 from scanline import app as app_mod
 from scanline import realtime
 from scanline.cache import TTLCache
-from scanline.pipeline import run_screen
 from scanline.models import ScreenRequest
+from scanline.pipeline import run_screen
 
 SECRET = "s3cretSESSIONidvalue123"
 
@@ -233,7 +233,9 @@ def test_health_get_head_and_mode(client):
 
 def _mcp(name, args):
     import asyncio
+
     from fastmcp import Client
+
     from scanline.mcp_server import mcp
 
     async def run():

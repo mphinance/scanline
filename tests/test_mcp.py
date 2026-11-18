@@ -17,7 +17,6 @@ from fastmcp import Client
 from scanline.mcp_server import (
     _compute_breadth,
     _compute_dividend_quality,
-    _days_to_earnings,
     _compute_earnings_radar,
     _compute_ema_stack,
     _compute_gap_scanner,
@@ -26,6 +25,7 @@ from scanline.mcp_server import (
     _compute_relative_strength,
     _compute_sector_rotation,
     _compute_volume_leaders,
+    _days_to_earnings,
     _otc_guard,
     _payout_health,
     mcp,

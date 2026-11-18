@@ -6,7 +6,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 # Hard ceiling on rows per request, shared by the HTTP API and the MCP tools.
 MAX_LIMIT = 1000
 

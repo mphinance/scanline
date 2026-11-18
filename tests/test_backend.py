@@ -11,9 +11,8 @@ import math
 import pytest
 
 from scanline import analytics
-from scanline.fields import FIELDS, field_index, validate_field
+from scanline.fields import FIELDS, validate_field
 from scanline.presets import FACTOR_PRESETS, OTC_GUARDED, PRESETS
-
 
 # --- catalog -------------------------------------------------------------
 
@@ -513,7 +512,7 @@ def test_query_columns_excludes_stat_sort_fields():
     # Sorting by a stat virtual column (winsor/decile/zscore/etc.) must NOT
     # add that virtual name to the query column set. Before the fix, winsor(
     # and decile( were missing from the guard and would leak into the query.
-    from scanline.models import ScreenRequest, Stat, SortKey
+    from scanline.models import ScreenRequest, SortKey, Stat
     from scanline.pipeline import _query_columns
 
     req = ScreenRequest(

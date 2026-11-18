@@ -19,7 +19,6 @@ from scanline import app as app_mod
 from scanline import realtime
 from scanline.models import ScreenRequest
 from scanline.pipeline import request_key, run_screen
-
 from tests.test_api import Upstream, up  # noqa: F401  (fixture re-export)
 
 SID = "SECRETsessionID0123456789"
@@ -207,7 +206,9 @@ def test_status_get_is_open_but_leaks_nothing(up):
 
 def test_mcp_path_uses_cookie_and_shapes_mode(up, monkeypatch):
     import asyncio
+
     from fastmcp import Client
+
     from scanline.mcp_server import mcp
     monkeypatch.setenv("SCANLINE_TV_SESSIONID", SID)
 

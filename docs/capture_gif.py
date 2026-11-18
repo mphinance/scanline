@@ -1,5 +1,6 @@
 import io
 from pathlib import Path
+
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
