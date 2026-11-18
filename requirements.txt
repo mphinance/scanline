@@ -10,3 +10,4 @@ fastmcp>=2.0
 # install.
 pytest>=8.0
 httpx>=0.27
+ruff==0.17.5
