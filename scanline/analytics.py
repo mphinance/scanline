@@ -63,14 +63,14 @@ def _check(node: ast.AST) -> None:
     if not isinstance(node, _ALLOWED_NODES):
         raise _SafetyError("unsafe expression")
 
-    if isinstance(node, ast.Name):
-        if node.id.startswith("__") or "__" in node.id:
-            raise _SafetyError("unsafe expression")
+    if isinstance(node, ast.Name) and (node.id.startswith("__") or "__" in node.id):
+        raise _SafetyError("unsafe expression")
 
-    if isinstance(node, ast.Constant):
-        # Only numbers are allowed as literals. No strings, bytes, etc.
-        if not isinstance(node.value, (int, float)) or isinstance(node.value, bool):
-            raise _SafetyError("unsafe expression")
+    # Only numbers are allowed as literals. No strings, bytes, etc.
+    if isinstance(node, ast.Constant) and (
+        not isinstance(node.value, (int, float)) or isinstance(node.value, bool)
+    ):
+        raise _SafetyError("unsafe expression")
 
     if isinstance(node, ast.Call):
         # The callable must be a bare allowed-function name.

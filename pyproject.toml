@@ -41,6 +41,7 @@ dependencies = [
     "pandas>=2.0",
     "requests>=2.31",
     "fastmcp>=2.0",
+    "tzdata>=2026.6",
 ]
 
 [project.optional-dependencies]

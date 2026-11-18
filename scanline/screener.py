@@ -241,9 +241,8 @@ def _build_conditions(filters: list[dict]):
 
 def _json_safe(value: Any) -> Any:
     """Replace NaN/inf with None so the payload serializes cleanly."""
-    if isinstance(value, float):
-        if math.isnan(value) or math.isinf(value):
-            return None
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
     return value
 
 

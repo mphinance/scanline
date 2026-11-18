@@ -18,7 +18,7 @@ NO_DOCKER = "/nonexistent/.dockerenv"
 
 
 def ns(**kw):
-    base = dict(host="127.0.0.1", no_browser=False)
+    base = {"host": "127.0.0.1", "no_browser": False}
     base.update(kw)
     return SimpleNamespace(**base)
 

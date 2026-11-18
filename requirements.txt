@@ -4,6 +4,7 @@ tradingview-screener>=3.0
 pandas>=2.0
 requests>=2.31
 fastmcp>=2.0
+tzdata>=2026.6
 
 # Test suite. CLAUDE.md documents `python -m pytest tests/ -q -m "not live"` as a
 # standard command, so it belongs here: without it that command fails on a fresh

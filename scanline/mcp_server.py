@@ -937,7 +937,7 @@ def analyze(ticker: str, market: str = "america") -> dict:
     summary = (
         f"{row.get('name', ticker.upper())} at {close}: {rating['overall']} overall. "
         f"{trend_label or 'trend n/a'}; "
-        f"RSI {('%.0f' % rsi) if rsi is not None else 'n/a'}"
+        f"RSI {format(rsi, '.0f') if rsi is not None else 'n/a'}"
         f"{f' ({rsi_state})' if rsi_state else ''}; "
         f"MACD {'bullish' if macd_bull else 'bearish'}; "
         f"timeframes {alignment}."

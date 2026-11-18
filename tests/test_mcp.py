@@ -1811,19 +1811,21 @@ def test_compute_gap_scanner_is_holding_and_filled_flags():
 
 
 def test_compute_gap_scanner_sorted_by_abs_gap():
-    # Results should be ordered by |gap| descending, mixing gap_up and gap_down.
+    # Each side should be ordered by |gap| descending independently.
     rows = [
         {"name": "Small",    "open": 102.0, "close": 102.0, "gap":  2.0, "sector": "S"},
         {"name": "Biggest",  "open": 115.0, "close": 115.0, "gap": 15.0, "sector": "S"},
         {"name": "NegMid",   "open":  93.0, "close":  93.0, "gap": -7.0, "sector": "S"},
+        {"name": "NegBig",   "open":  88.0, "close":  88.0, "gap": -12.0, "sector": "S"},
     ]
     result = _compute_gap_scanner(rows, min_gap_pct=1.0)
-    # Combined qualified list is sorted by |gap| desc.
-    all_rows = result["gap_up"] + result["gap_down"]
-    abs_gaps = [abs(r["gap"]) for r in all_rows]
+    for side in ("gap_up", "gap_down"):
+        abs_gaps = [abs(r["gap"]) for r in result[side]]
+        assert len(abs_gaps) == 2
+        assert abs_gaps == sorted(abs_gaps, reverse=True)
     # Biggest (15%) should appear first in gap_up.
     assert result["gap_up"][0]["name"] == "Biggest"
-    # The gap_down list has only NegMid (7%), gap_up has Biggest (15%) and Small (2%).
+    assert result["gap_down"][0]["name"] == "NegBig"
     assert abs(result["gap_up"][0]["gap"]) >= abs(result["gap_up"][-1]["gap"])
 
 

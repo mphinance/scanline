@@ -79,9 +79,9 @@ def _has_numeric_floor(preset: dict) -> bool:
         op, val = str(f.get("op")), f.get("value")
         if op in (">", ">=") and isinstance(val, (int, float)):
             return True
-        if op in ("between", "in_range") and isinstance(val, (list, tuple)) and val:
-            if isinstance(val[0], (int, float)):
-                return True
+        if (op in ("between", "in_range") and isinstance(val, (list, tuple)) and val
+                and isinstance(val[0], (int, float))):
+            return True
     return False
 
 
