@@ -3,6 +3,7 @@
     python packaging/smoke.py dist/scanline-linux
 """
 
+import logging
 import subprocess
 import sys
 import time
@@ -28,7 +29,8 @@ def main() -> int:
             try:
                 if get("/api/health") == 200:
                     break
-            except Exception:
+            except OSError as exc:
+                logging.getLogger(__name__).warning("Health check failed: %s", exc)
                 time.sleep(1)
         else:
             print("timed out waiting for /api/health")

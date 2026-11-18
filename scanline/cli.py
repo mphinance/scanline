@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
+import logging
 import os
 import socket
 import threading
@@ -143,8 +144,8 @@ def _open_when_ready(url: str, timeout: float = 30.0, opener=webbrowser.open) ->
                 if resp.status == 200:
                     opener(url)
                     return True
-        except Exception:
-            pass
+        except (OSError, webbrowser.Error) as exc:
+            logging.getLogger(__name__).warning("Browser auto-open attempt failed: %s", exc)
         time.sleep(0.25)
     return False
 

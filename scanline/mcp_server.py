@@ -2261,8 +2261,8 @@ def ema_stack_scan(
     return out
 
 
-def _market_tz() -> dt.tzinfo | None:
-    """US market timezone, or None to fall back to the host's local time.
+def _market_tz() -> dt.tzinfo:
+    """US market timezone. Fail if the timezone database is unavailable.
 
     earnings_release_next_date is a real UTC instant (NVDA reads 20:00 UTC, the
     4pm ET after-close slot), so turning it into a CALENDAR DAY needs a fixed
@@ -2271,16 +2271,12 @@ def _market_tz() -> dt.tzinfo | None:
     from New York. The market's own clock is the honest anchor for a US equities
     scan, so both the query window and the day count use it.
 
-    Returns None when the tz database is unavailable (a bare Windows install
-    without `tzdata`), which restores the previous local-time behaviour rather
-    than failing the scan.
+    A missing timezone database must surface rather than silently changing
+    earnings dates to the host's local calendar.
     """
-    try:
-        from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo
 
-        return ZoneInfo("America/New_York")
-    except Exception:
-        return None
+    return ZoneInfo("America/New_York")
 
 
 def _market_today() -> dt.date:
