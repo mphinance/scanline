@@ -26,7 +26,7 @@ SIGN = "SECRETsignVALUE0123456789"
 
 
 @pytest.fixture
-def client(up):  # noqa: F811
+def client(up):
     return TestClient(app_mod.app, client=("127.0.0.1", 50000))
 
 

@@ -74,3 +74,8 @@ exclude = ["*.test.mjs"]
 # for this location when the sibling frontend/ folder of a checkout is absent.
 [tool.hatch.build.targets.wheel.sources]
 "frontend" = "scanline/static"
+
+[tool.ruff.lint.per-file-ignores]
+# pytest injects `up` (tests/test_realtime.py:22) by name; the parameter in each test *is* that
+# fixture, so F811's shadowing premise does not hold.
+"tests/test_realtime.py" = ["F811"]
